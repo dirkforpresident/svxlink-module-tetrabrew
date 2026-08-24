@@ -57,16 +57,17 @@ zusammen, statt dass jeder ein eigenes Gerät für jedes Netz braucht.
 
 Wichtig zu verstehen, weil die zwei Seiten **unterschiedlich** angebunden sind:
 
-- 📡 **TETRA-Seite = immer-an-Kern.** Eine BlueStation ist eine Basisstation und hängt
-  **permanent** am BREW-Server (ohne Netz ist sie ohnehin nutzlos). TETRA ist ein
-  Infrastruktur-Mode — „immer verbunden" ist einfach, was eine BlueStation tut.
-- 📻 **FM-Seite = on-demand-Rand.** Ein FM-Repeater funktioniert komplett ohne Netz; die
-  Brücke ist Zusatz. Deshalb klinkt sich das Modul standardmäßig **nur bei Bedarf per `5#`**
-  ein (wie ModuleEchoLink) und gibt danach wieder frei.
+- 📡 **TETRA-Seite: sinnvollerweise dauerhaft verbunden.** Eine BlueStation läuft zwar auch
+  lokal für sich — aber es lohnt sich, **alle Zellen einer Region** permanent am BREW-Server
+  zu haben, damit die Region zusammenwächst und man sich jederzeit erreicht. Deshalb sind
+  BlueStations üblicherweise dauernd online.
+- 📻 **FM-Seite: freie Wahl.** Ein FM-Repeater funktioniert komplett ohne Netz; die Brücke ist
+  Zusatz. Standardmäßig klinkt sich das Modul **nur bei Bedarf per `5#`** ein (wie
+  ModuleEchoLink) und gibt danach wieder frei — **oder** du fährst es dauerhaft verbunden.
 
-Folge: Solange die FM-Seite *schläft*, ist sie von TETRA aus nicht erreichbar — Cross-Mode
-läuft, sobald ein FM-OM aktiviert (dann in **beide** Richtungen). Wer stattdessen einen
-**dauerhaft vernetzten** FM-Einstieg will (wie eine BlueStation), setzt `AUTO_CONNECT=1` +
+Bei on-demand gilt: solange die FM-Seite *schläft*, ist sie von TETRA aus nicht erreichbar —
+Cross-Mode läuft, sobald ein FM-OM aktiviert (dann in **beide** Richtungen). Wer stattdessen
+einen **dauerhaft vernetzten** FM-Einstieg will (wie eine BlueStation), setzt `AUTO_CONNECT=1` +
 `TIMEOUT=0` — dann ist die FM-Seite auch immer erreichbar. **Du entscheidest pro Repeater.**
 
 ---
