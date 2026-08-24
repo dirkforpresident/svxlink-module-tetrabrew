@@ -159,6 +159,33 @@ Was du als zweites Netz dranhängst, bleibt dir überlassen — es geht **jeder 
 
 ---
 
+## Brauche ich den TLS-Proxy?
+
+Nur, wenn dein BREW-Server über **`wss://` (TLS)** läuft — so wie **FreeTetra** (hinter nginx auf
+Port 443). SvxLink selbst kann kein TLS, deshalb übernimmt das der Proxy:
+
+```
+Modul --(plain ws://)--> 127.0.0.1:18443 --(TLS)--> freetetra.de:443
+```
+
+| Ziel-Server | Proxy nötig? |
+|---|---|
+| **`wss://` (TLS)** — z.B. FreeTetra | **Ja** (`install.sh` richtet ihn automatisch ein) |
+| **`ws://` (plain)** — eigener Server im LAN / über Tailscale / VPN | **Nein** — dann direkt `HOST=<ip>` `PORT=<port>`, kein Proxy |
+
+---
+
+## Läuft das auf uraltem SvxLink?
+
+**Ja — genau dafür ist es gebaut.** Das Modul nutzt nur die schon ewig stabilen Async-Bausteine
+(`TcpClient`, Audio-Pipeline, Timer) und wird von `install.sh` **lokal gegen dein installiertes
+SvxLink kompiliert** — dadurch passt es exakt zu deiner Version, egal ob alt oder neu. Genau
+deshalb gibt es auch den TLS-Proxy (altes Async kann kein TLS). Getestet u.a. auf **SvxLink 1.7.0
+(armhf)**. Voraussetzung ist praktisch nur ein `g++` mit C++11 (auf jedem Raspberry-Pi-SvxLink
+dabei). Auf ganz neuem SvxLink läuft es identisch — dort wird irgendwann nur der Proxy überflüssig.
+
+---
+
 ## Lizenz
 
 GPL v2+ (wie SvxLink). Nutzung auf eigene Verantwortung — du bist als Repeater-Verantwortlicher
