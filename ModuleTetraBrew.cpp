@@ -159,6 +159,9 @@ bool ModuleTetraBrew::initialize(void)
   // echten Dauer-Knoten zusätzlich TIMEOUT=0 setzen (kein Inaktivitäts-Release).
   if (m_auto_connect)
   {
+    if (m_default_tg == 0)
+      cerr << "*** WARNING: ModuleTetraBrew: AUTO_CONNECT gesetzt, aber DEFAULT_TG=0 "
+              "-> es gibt keine TG zum Verbinden. Bitte DEFAULT_TG setzen.\n";
     m_autocon_tmo = new Timer(4000, Timer::TYPE_ONESHOT);
     m_autocon_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onAutoConnect));
     cout << "\t  AUTO_CONNECT: Modul aktiviert sich beim Start selbst.\n";
@@ -211,6 +214,8 @@ bool ModuleTetraBrew::loadEndpoint(const string& name)
 
 void ModuleTetraBrew::activateInit(void)
 {
+  // Ab jetzt „soll verbunden bleiben" (nur relevant im Permanent-Modus für Reconnect).
+  m_want_connected = m_auto_connect;
   // "5<tg>#" liefert eine Wunsch-TG (m_pending_tg), sonst DEFAULT_TG.
   uint32_t tg = m_pending_tg ? m_pending_tg : m_default_tg;
   m_pending_tg = 0;
@@ -228,6 +233,11 @@ void ModuleTetraBrew::activateInit(void)
 
 void ModuleTetraBrew::deactivateCleanup(void)
 {
+  // Bewusste Deaktivierung (# oder Inaktivitäts-TIMEOUT) -> keinen Reconnect mehr.
+  m_want_connected = false;
+  m_reconnect_tg = 0;
+  m_backoff_s = 0;
+  if (m_autocon_tmo) m_autocon_tmo->setEnable(false);
   disconnectAll();
   m_active = -1;
   m_cur_tg = 0;
@@ -367,6 +377,7 @@ void ModuleTetraBrew::onConnected(int ep)
     processEvent(ss.str());
   }
   if (m_status_tmo) { m_status_tmo->reset(); m_status_tmo->setEnable(true); }
+  m_backoff_s = 0;               // erfolgreiche Verbindung -> Backoff zurücksetzen
   setIdle(false);
 }
 
@@ -376,9 +387,32 @@ void ModuleTetraBrew::onDisconnected(int ep)
   if (ep != m_active) return;
   if (m_announce) processEvent("brew_disconnected");
   if (m_status_tmo) m_status_tmo->setEnable(false);
+
+  // Permanent-Knoten: Verbindung nicht aufgeben, sondern mit Backoff neu aufbauen.
+  // m_active bleibt erhalten, damit der Audio-Pfad + die Sprecher-Zuordnung stimmen.
+  if (m_want_connected)
+  {
+    m_reconnect_tg = m_cur_tg ? m_cur_tg : m_default_tg;
+    setIdle(false);
+    scheduleReconnect();
+    return;
+  }
+
   m_active = -1;
   m_cur_tg = 0;
   setIdle(true);
+}
+
+
+void ModuleTetraBrew::scheduleReconnect(void)
+{
+  // Exponentieller Backoff (5,10,20,40,60,60… s), damit ein dauerhaft schließender
+  // Server nicht gehämmert wird. m_autocon_tmo neu aufsetzen (One-Shot).
+  m_backoff_s = (m_backoff_s <= 0) ? 5 : (m_backoff_s * 2 > 60 ? 60 : m_backoff_s * 2);
+  delete m_autocon_tmo;
+  m_autocon_tmo = new Async::Timer(m_backoff_s * 1000, Async::Timer::TYPE_ONESHOT);
+  m_autocon_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onAutoConnect));
+  cout << "TetraBrew: Reconnect in " << m_backoff_s << " s\n";
 }
 
 
@@ -419,12 +453,22 @@ void ModuleTetraBrew::onStatusTimer(Async::Timer*)
 
 void ModuleTetraBrew::onAutoConnect(Async::Timer*)
 {
-  // AUTO_CONNECT: Modul einmalig beim Start selbst aktivieren, sofern noch nicht aktiv
-  // (z.B. hat schon jemand per 5# aktiviert). activateInit() verbindet dann mit DEFAULT_TG.
   if (m_active < 0)
   {
+    // Erststart (oder Modul war nicht aktiv): Modul aktivieren -> activateInit()
+    // verbindet mit DEFAULT_TG (bzw. m_pending_tg).
     cout << "ModuleTetraBrew: AUTO_CONNECT -> aktiviere Brücke.\n";
+    if (m_reconnect_tg == 0 && m_default_tg != 0) m_pending_tg = m_default_tg;
     activateMe();
+  }
+  else if (m_want_connected && !m_eps[m_active].conn->isConnected())
+  {
+    // Permanent-Knoten nach Abriss: aktiven Endpunkt neu verbinden.
+    uint32_t tg = m_reconnect_tg ? m_reconnect_tg : m_default_tg;
+    cout << "ModuleTetraBrew: Reconnect zu '" << m_eps[m_active].name
+         << "' TG " << tg << ".\n";
+    if (tg) m_eps[m_active].conn->selectTg(tg);
+    m_eps[m_active].conn->connect();
   }
 }
 

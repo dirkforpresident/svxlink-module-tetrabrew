@@ -59,6 +59,8 @@ class TetraBrewConnection : public sigc::trackable
     bool tetraActive(void) const { return m_tetra_active; }
     bool isConnected(void) const { return m_state == ST_WS_UP; }
     uint32_t currentTg(void) const { return m_cur_tg; }
+    // Sendet dieser Endpunkt gerade wirklich FM->TETRA? Nur dann lohnt Encoden.
+    bool txActive(void) const { return m_state == ST_WS_UP && m_local_tx && m_cur_tg != 0; }
 
     // --- Signale an das Modul ---
     sigc::signal<void>            sigConnected;

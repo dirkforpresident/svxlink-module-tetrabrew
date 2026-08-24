@@ -183,6 +183,9 @@ class AcelpEncoderSink : public Async::AudioSink
 
     virtual int writeSamples(const float *samples, int count)
     {
+      // Nur encoden, wenn dieser Endpunkt gerade wirklich sendet — spart CPU auf
+      // inaktiven Endpunkten und solange der FM-Squelch zu ist.
+      if (!m_conn->txActive()) { m_buf.clear(); return count; }
       for (int i = 0; i < count; i++) m_buf.push_back(samples[i]);
       while (int(m_buf.size()) >= SAMPLES_PER_FRAME_8K)
       {

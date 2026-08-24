@@ -56,6 +56,9 @@ class ModuleTetraBrew : public Module
     int      m_status_interval = 0;    // periodische „verbunden mit"-Ansage (Sek), 0 = aus
     bool     m_announce    = true;
     bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
+    bool     m_want_connected = false; // Soll-Zustand: verbunden bleiben (Permanent-Reconnect)
+    uint32_t m_reconnect_tg = 0;       // TG, auf die nach Abriss wieder verbunden wird
+    int      m_backoff_s   = 0;        // aktueller Reconnect-Backoff (Sek), 0 = frisch
 
     // --- Endpunkte + Laufzeitzustand ---
     std::vector<Endpoint> m_eps;
@@ -87,6 +90,7 @@ class ModuleTetraBrew : public Module
     void selectTg(uint32_t gssi);
     void announceLinked(void);
     void disconnectAll(void);
+    void scheduleReconnect(void);   // Permanent-Knoten: Wiederverbindung mit Backoff planen
 
     // --- Connection-Callbacks (mit Endpunkt-Index gebunden) ---
     void onConnected(int ep);
