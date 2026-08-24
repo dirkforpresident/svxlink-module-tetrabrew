@@ -70,7 +70,7 @@ und du bist im FreeTetra-Netz.
 ## Installation
 
 ```bash
-git clone https://github.com/dirkforpresident/svxlink-module-tetrabrew.git
+git clone https://github.com/do1xx/svxlink-module-tetrabrew.git
 cd svxlink-module-tetrabrew
 sudo ./install.sh
 ```
