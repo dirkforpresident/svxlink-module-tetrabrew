@@ -8,6 +8,38 @@ Talkgroup-Wahl per DTMF, deutsche Sprachansagen, läuft auf **alten wie neuen** 
 
 ---
 
+## In 3 Schritten am Netz ⏱️
+
+Noch nie ein SvxLink-Modul von Hand installiert? Kein Problem — `install.sh` macht die ganze
+Arbeit (Codec + Modul bauen, alles kopieren, TLS-Proxy einrichten). Du machst nur **drei Dinge**:
+
+```bash
+# 1) Holen + installieren (baut & installiert alles automatisch)
+git clone https://github.com/do1xx/svxlink-module-tetrabrew.git
+cd svxlink-module-tetrabrew
+sudo ./install.sh
+
+# 2) Deine RadioID eintragen (2 Zeilen) in der frisch kopierten Vorlage:
+sudo nano /etc/svxlink/svxlink.d/ModuleTetraBrew.conf
+#    -> USER=<deine RadioID>   und   SRC_ISSI=<deine RadioID>
+
+# 3) Modul in der Logic-Sektion aktivieren + neu starten:
+sudo nano /etc/svxlink/svxlink.conf      # in der Zeile: MODULES=...,ModuleTetraBrew
+sudo systemctl restart svxlink
+```
+
+**Fertig.** Auftasten → `5#` → du bist im FreeTetra-Netz (Talkgroup 1). Andere TG: `<tg>#`, aus: `#`.
+
+> **Du brauchst nur:** einen laufenden SvxLink-Repeater, deine **RadioID** (kostenlos auf
+> radioid.net) und die üblichen Bau-Werkzeuge (`g++`, `python3` — meist schon da). Mehr nicht.
+> Die ~35 Dateien im Repo sind fast alle Sprachansagen (`sounds/*.wav`) und Header — **die fasst
+> du nie an**, das erledigt der Installer.
+
+Mehr willst du fürs Mitmachen nicht wissen. Alles darunter ist Nachschlagewerk (Optionen,
+mehrere Netze, Technik).
+
+---
+
 ## Die Idee: FreeTetra 🌐
 
 [**freetetra.de**](https://freetetra.de) ist ein **freier, offener BREW-Server**, der einzelne
@@ -35,9 +67,10 @@ zusammen, statt dass jeder ein eigenes Gerät für jedes Netz braucht.
 
 ---
 
-## Schnellstart: an FreeTetra 🚀
+## Die FreeTetra-Config im Detail
 
-Nach der [Installation](#installation) in die `svxlink.conf` (bzw. `svxlink.d/ModuleTetraBrew.conf`):
+`install.sh` kopiert dir diese Vorlage schon nach `svxlink.d/ModuleTetraBrew.conf` — du trägst nur
+deine RadioID ein. So sieht sie aus, mit Erklärungen:
 
 ```ini
 [ModuleTetraBrew]
@@ -59,26 +92,15 @@ GSSI_MIN=1
 GSSI_MAX=16777215     ; nur ein Server -> ganzer Bereich (Aufteilung nur beim Splitten nötig)
 ```
 
-Und in deiner Logic-Sektion `MODULES=...,ModuleTetraBrew` ergänzen. Fertig — auftasten, `5#`,
-und du bist im FreeTetra-Netz.
+## Was `install.sh` automatisch macht
 
-> **Du brauchst:** einen laufenden SvxLink-Repeater, deine **RadioID** (radioid.net), `python3`
-> (für den TLS-Proxy zu `wss://freetetra.de`) und `g++` (zum Bauen). Mehr nicht.
+Damit du weißt, was da passiert (musst du nicht selbst tun):
 
----
-
-## Installation
-
-```bash
-git clone https://github.com/do1xx/svxlink-module-tetrabrew.git
-cd svxlink-module-tetrabrew
-sudo ./install.sh
-```
-
-`install.sh` baut den ACELP-Codec (`libtetra-codec`) und das Modul **gegen dein installiertes
-SvxLink** (⚠️ das Modul ist versions-gebunden — es wird lokal kompiliert, damit es exakt passt),
-installiert `.so` / `.conf` / `.tcl` / Sounds, richtet den TLS-Proxy als systemd-Service ein und
-sagt dir, was du noch in die `svxlink.conf` eintragen musst.
+- baut den ACELP-Codec (`libtetra-codec`) und das Modul **gegen dein installiertes SvxLink**
+  (⚠️ das Modul ist versions-gebunden — es wird lokal kompiliert, damit es exakt passt),
+- installiert `.so` / `.conf` / `.tcl` / Sounds an die richtigen Stellen,
+- richtet den TLS-Proxy als systemd-Service ein (für `wss://freetetra.de`),
+- kopiert die Config-Vorlage und sagt dir am Ende die zwei/drei Handgriffe, die noch fehlen.
 
 ---
 
