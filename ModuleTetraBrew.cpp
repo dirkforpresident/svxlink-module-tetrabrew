@@ -65,6 +65,7 @@ ModuleTetraBrew::~ModuleTetraBrew(void)
   AudioSource::clearHandler();
   delete m_tx_tmo;     m_tx_tmo = 0;
   delete m_status_tmo; m_status_tmo = 0;
+  delete m_autocon_tmo; m_autocon_tmo = 0;
   for (size_t i = 0; i < m_eps.size(); i++) { delete m_eps[i].conn; m_eps[i].conn = 0; }
   m_eps.clear();
   delete m_rx_split; m_rx_split = 0;
@@ -85,6 +86,7 @@ bool ModuleTetraBrew::initialize(void)
   cfg().getValue(cfgName(), "MAX_TX_TIME", m_max_tx_time);
   cfg().getValue(cfgName(), "STATUS_INTERVAL", m_status_interval);
   cfg().getValue(cfgName(), "ANNOUNCE", m_announce);
+  cfg().getValue(cfgName(), "AUTO_CONNECT", m_auto_connect);
 
   string servers;
   cfg().getValue(cfgName(), "BREW_SERVERS", servers);
@@ -150,6 +152,16 @@ bool ModuleTetraBrew::initialize(void)
     m_status_tmo = new Timer(m_status_interval * 1000, Timer::TYPE_PERIODIC);
     m_status_tmo->setEnable(false);
     m_status_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onStatusTimer));
+  }
+
+  // AUTO_CONNECT: Permanent-Knoten — kurz nach dem Start selbst aktivieren (nicht
+  // sofort in initialize(), damit die Logic-Core fertig hochgefahren ist). Für einen
+  // echten Dauer-Knoten zusätzlich TIMEOUT=0 setzen (kein Inaktivitäts-Release).
+  if (m_auto_connect)
+  {
+    m_autocon_tmo = new Timer(4000, Timer::TYPE_ONESHOT);
+    m_autocon_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onAutoConnect));
+    cout << "\t  AUTO_CONNECT: Modul aktiviert sich beim Start selbst.\n";
   }
 
   return true;
@@ -401,6 +413,18 @@ void ModuleTetraBrew::onStatusTimer(Async::Timer*)
   if (m_active >= 0 && m_eps[m_active].conn->isConnected())
   {
     announceLinked();
+  }
+}
+
+
+void ModuleTetraBrew::onAutoConnect(Async::Timer*)
+{
+  // AUTO_CONNECT: Modul einmalig beim Start selbst aktivieren, sofern noch nicht aktiv
+  // (z.B. hat schon jemand per 5# aktiviert). activateInit() verbindet dann mit DEFAULT_TG.
+  if (m_active < 0)
+  {
+    cout << "ModuleTetraBrew: AUTO_CONNECT -> aktiviere Brücke.\n";
+    activateMe();
   }
 }
 

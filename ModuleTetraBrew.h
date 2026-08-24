@@ -55,6 +55,7 @@ class ModuleTetraBrew : public Module
     int      m_max_tx_time = 0;        // FM->TETRA-Durchgangslimit (Sek), 0 = aus
     int      m_status_interval = 0;    // periodische „verbunden mit"-Ansage (Sek), 0 = aus
     bool     m_announce    = true;
+    bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
 
     // --- Endpunkte + Laufzeitzustand ---
     std::vector<Endpoint> m_eps;
@@ -67,6 +68,7 @@ class ModuleTetraBrew : public Module
     Async::AudioSelector *m_tx_sel   = 0;   // Endpunkte -> FM-TX (Auto-Select)
     Async::Timer         *m_tx_tmo   = 0;   // MAX_TX_TIME-Wächter
     Async::Timer         *m_status_tmo = 0; // periodische Status-Ansage
+    Async::Timer         *m_autocon_tmo = 0; // verzögerter Auto-Connect beim Start
 
     // --- Module-Overrides ---
     bool initialize(void);
@@ -93,6 +95,7 @@ class ModuleTetraBrew : public Module
     void onTetraTalkStop(int ep);
     void onTxTimeout(Async::Timer *t);
     void onStatusTimer(Async::Timer *t);    // periodische „verbunden mit"-Ansage
+    void onAutoConnect(Async::Timer *t);    // AUTO_CONNECT: Selbst-Aktivierung beim Start
 
 };  /* class ModuleTetraBrew */
 

@@ -53,6 +53,22 @@ in dem sich FM- und TETRA-Leute treffen.
 **TETRA + FM ist das Geile.** 😎 Bei wenig Betrieb bringt das die Modi und die Leute
 zusammen, statt dass jeder ein eigenes Gerät für jedes Netz braucht.
 
+### TETRA-Kern & FM-Rand — wie beide Seiten zusammenpassen
+
+Wichtig zu verstehen, weil die zwei Seiten **unterschiedlich** angebunden sind:
+
+- 📡 **TETRA-Seite = immer-an-Kern.** Eine BlueStation ist eine Basisstation und hängt
+  **permanent** am BREW-Server (ohne Netz ist sie ohnehin nutzlos). TETRA ist ein
+  Infrastruktur-Mode — „immer verbunden" ist einfach, was eine BlueStation tut.
+- 📻 **FM-Seite = on-demand-Rand.** Ein FM-Repeater funktioniert komplett ohne Netz; die
+  Brücke ist Zusatz. Deshalb klinkt sich das Modul standardmäßig **nur bei Bedarf per `5#`**
+  ein (wie ModuleEchoLink) und gibt danach wieder frei.
+
+Folge: Solange die FM-Seite *schläft*, ist sie von TETRA aus nicht erreichbar — Cross-Mode
+läuft, sobald ein FM-OM aktiviert (dann in **beide** Richtungen). Wer stattdessen einen
+**dauerhaft vernetzten** FM-Einstieg will (wie eine BlueStation), setzt `AUTO_CONNECT=1` +
+`TIMEOUT=0` — dann ist die FM-Seite auch immer erreichbar. **Du entscheidest pro Repeater.**
+
 ---
 
 ## Was das Modul kann
@@ -117,6 +133,7 @@ Damit du weißt, was da passiert (musst du nicht selbst tun):
 | `MAX_TX_TIME` | max. FM→TETRA-Durchgang (Sek), `0` = aus |
 | `STATUS_INTERVAL` | periodische „verbunden mit"-Ansage (Sek), `0` = aus (bzw. an CW-Kennung koppeln) |
 | `ANNOUNCE` | Sprachansagen an/aus |
+| `AUTO_CONNECT` | `1` = **Permanent-Knoten**: Modul aktiviert sich beim Start selbst (statt erst per `5#`). Für echten Dauerbetrieb zusätzlich `TIMEOUT=0`. Default `0` = on-demand |
 
 **Pro Endpunkt `[ModuleTetraBrew_<Name>]`:**
 
