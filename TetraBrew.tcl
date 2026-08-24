@@ -43,6 +43,7 @@ proc activating_module {} {
   printInfo "aktiviert";
 }
 proc deactivating_module {} {
+  playMsg "disconnected";
   printInfo "deaktiviert";
 }
 proc timeout {} {
