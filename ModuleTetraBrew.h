@@ -26,6 +26,7 @@ namespace Async
 {
   class AudioSplitter;
   class AudioSelector;
+  class AudioPassthrough;
   class Timer;
 };
 
@@ -56,6 +57,7 @@ class ModuleTetraBrew : public Module
     int      m_status_interval = 0;    // periodische „verbunden mit"-Ansage (Sek), 0 = aus
     bool     m_announce    = true;
     bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
+    bool     m_local_repeat = true;    // lokalen FM-Repeat (RX->TX) parallel weiterlaufen lassen
     bool     m_want_connected = false; // Soll-Zustand: verbunden bleiben (Permanent-Reconnect)
     uint32_t m_reconnect_tg = 0;       // TG, auf die nach Abriss wieder verbunden wird
     int      m_backoff_s   = 0;        // aktueller Reconnect-Backoff (Sek), 0 = frisch
@@ -67,8 +69,9 @@ class ModuleTetraBrew : public Module
     uint32_t m_pending_tg = 0;         // TG aus "5<tg>#"-Ein-Schritt-Aktivierung
 
     // --- Audio ---
-    Async::AudioSplitter *m_rx_split = 0;   // FM-RX -> alle Endpunkte (nur aktiver sendet)
-    Async::AudioSelector *m_tx_sel   = 0;   // Endpunkte -> FM-TX (Auto-Select)
+    Async::AudioSplitter  *m_rx_split = 0;   // FM-RX -> alle Endpunkte (nur aktiver sendet)
+    Async::AudioSelector  *m_tx_sel   = 0;   // Endpunkte + Lokal-Monitor -> FM-TX (Auto-Select)
+    Async::AudioPassthrough *m_local_mon = 0; // FM-RX -> FM-TX (lokaler Repeat, wenn aktiv)
     Async::Timer         *m_tx_tmo   = 0;   // MAX_TX_TIME-Wächter
     Async::Timer         *m_status_tmo = 0; // periodische Status-Ansage
     Async::Timer         *m_autocon_tmo = 0; // verzögerter Auto-Connect beim Start

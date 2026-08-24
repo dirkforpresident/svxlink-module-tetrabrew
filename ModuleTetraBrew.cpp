@@ -13,6 +13,7 @@
 #include <AsyncConfig.h>
 #include <AsyncAudioSplitter.h>
 #include <AsyncAudioSelector.h>
+#include <AsyncAudioPassthrough.h>
 #include <AsyncTimer.h>
 
 #include "version/MODULE_TETRA_BREW.h"
@@ -67,6 +68,7 @@ ModuleTetraBrew::~ModuleTetraBrew(void)
   delete m_status_tmo; m_status_tmo = 0;
   delete m_autocon_tmo; m_autocon_tmo = 0;
   for (size_t i = 0; i < m_eps.size(); i++) { delete m_eps[i].conn; m_eps[i].conn = 0; }
+  delete m_local_mon; m_local_mon = 0;
   m_eps.clear();
   delete m_rx_split; m_rx_split = 0;
   delete m_tx_sel;   m_tx_sel = 0;
@@ -87,6 +89,7 @@ bool ModuleTetraBrew::initialize(void)
   cfg().getValue(cfgName(), "STATUS_INTERVAL", m_status_interval);
   cfg().getValue(cfgName(), "ANNOUNCE", m_announce);
   cfg().getValue(cfgName(), "AUTO_CONNECT", m_auto_connect);
+  cfg().getValue(cfgName(), "LOCAL_REPEAT", m_local_repeat);
 
   string servers;
   cfg().getValue(cfgName(), "BREW_SERVERS", servers);
@@ -136,6 +139,17 @@ bool ModuleTetraBrew::initialize(void)
     c->sigDisconnected.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onDisconnected), idx));
     c->sigTalkStart.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onTetraTalkStart), idx));
     c->sigTalkStop.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onTetraTalkStop), idx));
+  }
+
+  // Lokaler FM-Repeat: FM-RX zusätzlich direkt auf FM-TX legen (Vorrang vor TETRA),
+  // damit FM->FM im Relais sauber durchläuft, während das Modul aktiv ist. Nur so
+  // bleibt ein normaler Repeater-Betrieb erhalten (nicht nur Bridge-Audio).
+  if (m_local_repeat)
+  {
+    m_local_mon = new AudioPassthrough;
+    m_rx_split->addSink(m_local_mon);
+    m_tx_sel->addSource(m_local_mon);
+    m_tx_sel->enableAutoSelect(m_local_mon, 10);   // Ortsuser hat Vorrang vor TETRA-Audio
   }
 
   // MAX_TX_TIME-Wächter (optional)
