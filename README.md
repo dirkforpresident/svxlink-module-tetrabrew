@@ -8,7 +8,7 @@ Talkgroup-Wahl per DTMF, deutsche Sprachansagen, läuft auf **alten wie neuen** 
 
 ---
 
-## In 3 Schritten am Netz ⏱️
+## In 3 Schritten am Netz
 
 Noch nie ein SvxLink-Modul von Hand installiert? Kein Problem — `install.sh` macht die ganze
 Arbeit (Codec + Modul bauen, alles kopieren, TLS-Proxy einrichten). Du machst nur **drei Dinge**:
@@ -40,28 +40,28 @@ mehrere Netze, Technik).
 
 ---
 
-## Die Idee: FreeTetra 🌐
+## Die Idee: FreeTetra
 
 [**freetetra.de**](https://freetetra.de) ist ein **freier, offener BREW-Server**, der einzelne
 **TETRA-BlueStations** und **FM-Repeater** miteinander vernetzt. Wer eine **RadioID** hat, kann
 connecten — kein Account, keine Anmeldung. So entsteht ein gemeinsames Amateurfunk-TETRA-Netz,
 in dem sich FM- und TETRA-Leute treffen.
 
-- 📻 **FM-Repeater** kommen über *dieses Modul* rein.
-- 📡 **TETRA-BlueStations** sprechen BREW von Haus aus.
+- **FM-Repeater** kommen über *dieses Modul* rein.
+- **TETRA-BlueStations** sprechen BREW von Haus aus.
 
-**TETRA + FM ist das Geile.** 😎 Bei wenig Betrieb bringt das die Modi und die Leute
+**TETRA + FM ist das Geile.** Bei wenig Betrieb bringt das die Modi und die Leute
 zusammen, statt dass jeder ein eigenes Gerät für jedes Netz braucht.
 
 ### TETRA-Kern & FM-Rand — wie beide Seiten zusammenpassen
 
 Wichtig zu verstehen, weil die zwei Seiten **unterschiedlich** angebunden sind:
 
-- 📡 **TETRA-Seite: sinnvollerweise dauerhaft verbunden.** Eine BlueStation läuft zwar auch
+- **TETRA-Seite: sinnvollerweise dauerhaft verbunden.** Eine BlueStation läuft zwar auch
   lokal für sich — aber es lohnt sich, **alle Zellen einer Region** permanent am BREW-Server
   zu haben, damit die Region zusammenwächst und man sich jederzeit erreicht. Deshalb sind
   BlueStations üblicherweise dauernd online.
-- 📻 **FM-Seite: freie Wahl.** Ein FM-Repeater funktioniert komplett ohne Netz; die Brücke ist
+- **FM-Seite: freie Wahl.** Ein FM-Repeater funktioniert komplett ohne Netz; die Brücke ist
   Zusatz. Standardmäßig klinkt sich das Modul **nur bei Bedarf per `5#`** ein (wie
   ModuleEchoLink) und gibt danach wieder frei — **oder** du fährst es dauerhaft verbunden.
 
@@ -114,7 +114,7 @@ GSSI_MAX=16777215     ; nur ein Server -> ganzer Bereich (Aufteilung nur beim Sp
 Damit du weißt, was da passiert (musst du nicht selbst tun):
 
 - baut den ACELP-Codec (`libtetra-codec`) und das Modul **gegen dein installiertes SvxLink**
-  (⚠️ das Modul ist versions-gebunden — es wird lokal kompiliert, damit es exakt passt),
+  (das Modul ist versions-gebunden — es wird lokal kompiliert, damit es exakt passt),
 - installiert `.so` / `.conf` / `.tcl` / Sounds an die richtigen Stellen,
 - richtet den TLS-Proxy als systemd-Service ein (für `wss://freetetra.de`),
 - kopiert die Config-Vorlage und sagt dir am Ende die zwei/drei Handgriffe, die noch fehlen.
@@ -162,7 +162,7 @@ BREW_SERVERS=FreeTetra,Weiteres
 ```
 
 Was du als zweites Netz dranhängst, bleibt dir überlassen — es geht **jeder BREW-fähige Server**
-(ein anderes TETRA-Netz, ein Gateway o.ä.). 😉 ⚠️ Wenn du in ein fremdes/belebtes Netz brückst:
+(ein anderes TETRA-Netz, ein Gateway o.ä.). Wenn du in ein fremdes/belebtes Netz brückst:
 `GSSI_ALLOW` + regionale/Test-TGs nutzen, dessen Regeln beachten — du bist verantwortlich.
 
 ---
