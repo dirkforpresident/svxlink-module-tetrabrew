@@ -59,6 +59,7 @@ class ModuleTetraBrew : public Module
     bool     m_announce    = true;
     bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
     int      m_tg_idle_reset = 0;      // s Ruhe auf Fremd-TG -> zurück auf DEFAULT_TG (0 = aus)
+    bool     m_standby = false;        // dauerhaft eingebucht (ohne TG) -> immer im Verzeichnis + per SDS erreichbar
     bool     m_local_repeat = true;    // lokalen FM-Repeat (RX->TX) parallel weiterlaufen lassen
     bool     m_want_connected = false; // Soll-Zustand: verbunden bleiben (Permanent-Reconnect)
     uint32_t m_reconnect_tg = 0;       // TG, auf die nach Abriss wieder verbunden wird

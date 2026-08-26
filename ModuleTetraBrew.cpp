@@ -92,6 +92,7 @@ bool ModuleTetraBrew::initialize(void)
   cfg().getValue(cfgName(), "AUTO_CONNECT", m_auto_connect);
   cfg().getValue(cfgName(), "LOCAL_REPEAT", m_local_repeat);
   cfg().getValue(cfgName(), "TG_IDLE_RESET", m_tg_idle_reset);
+  cfg().getValue(cfgName(), "STANDBY", m_standby);
 
   string servers;
   cfg().getValue(cfgName(), "BREW_SERVERS", servers);
@@ -191,6 +192,15 @@ bool ModuleTetraBrew::initialize(void)
     m_autocon_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onAutoConnect));
     cout << "\t  AUTO_CONNECT: Modul aktiviert sich beim Start selbst.\n";
   }
+  // STANDBY: dauerhaft eingebucht bleiben OHNE TG (Modul bleibt SvxLink-inaktiv,
+  // Repeater normal nutzbar) -> immer im FreeTetra-Verzeichnis + per SDS erreichbar.
+  // Brücke wird trotzdem on-demand per DTMF (bzw. später SDS) auf eine TG geschaltet.
+  else if (m_standby)
+  {
+    m_autocon_tmo = new Timer(4000, Timer::TYPE_ONESHOT);
+    m_autocon_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onAutoConnect));
+    cout << "\t  STANDBY: Modul bleibt eingebucht (ohne TG), Brücke on-demand.\n";
+  }
 
   return true;
 }
@@ -239,8 +249,8 @@ bool ModuleTetraBrew::loadEndpoint(const string& name)
 
 void ModuleTetraBrew::activateInit(void)
 {
-  // Ab jetzt „soll verbunden bleiben" (nur relevant im Permanent-Modus für Reconnect).
-  m_want_connected = m_auto_connect;
+  // Ab jetzt „soll verbunden bleiben" (Permanent-Modus ODER Standby -> Reconnect).
+  m_want_connected = m_auto_connect || m_standby;
   // "5<tg>#" liefert eine Wunsch-TG (m_pending_tg), sonst DEFAULT_TG.
   uint32_t tg = m_pending_tg ? m_pending_tg : m_default_tg;
   m_pending_tg = 0;
@@ -258,7 +268,25 @@ void ModuleTetraBrew::activateInit(void)
 
 void ModuleTetraBrew::deactivateCleanup(void)
 {
-  // Bewusste Deaktivierung (# oder Inaktivitäts-TIMEOUT) -> keinen Reconnect mehr.
+  // Timer in jedem Fall aus.
+  if (m_tx_tmo) m_tx_tmo->setEnable(false);
+  if (m_rx_tmo) m_rx_tmo->setEnable(false);
+  if (m_status_tmo) m_status_tmo->setEnable(false);
+  if (m_tg_reset_tmo) m_tg_reset_tmo->setEnable(false);
+
+  if (m_standby && m_active >= 0)
+  {
+    // STANDBY: nur die TG lösen (deaffiliieren), aber EINGEBUCHT bleiben.
+    // -> Modul wird SvxLink-inaktiv (Repeater wieder normal), Verbindung bleibt,
+    //    Knoten steht weiter als "online · Standby" im Verzeichnis + per SDS erreichbar.
+    if (m_cur_tg) m_eps[m_active].conn->selectTg(0);   // deaffiliieren, WS bleibt oben
+    m_cur_tg = 0;
+    m_reconnect_tg = 0;                                 // Reconnect-Ziel = Standby
+    setIdle(true);
+    return;
+  }
+
+  // On-demand (kein Standby): bewusste Deaktivierung -> ganz trennen, kein Reconnect.
   m_want_connected = false;
   m_reconnect_tg = 0;
   m_backoff_s = 0;
@@ -266,10 +294,6 @@ void ModuleTetraBrew::deactivateCleanup(void)
   disconnectAll();
   m_active = -1;
   m_cur_tg = 0;
-  if (m_tx_tmo) m_tx_tmo->setEnable(false);
-  if (m_rx_tmo) m_rx_tmo->setEnable(false);
-  if (m_status_tmo) m_status_tmo->setEnable(false);
-  if (m_tg_reset_tmo) m_tg_reset_tmo->setEnable(false);
   setIdle(true);
 }
 
@@ -399,6 +423,12 @@ void ModuleTetraBrew::disconnectAll(void)
 void ModuleTetraBrew::onConnected(int ep)
 {
   if (ep != m_active) return;
+  m_backoff_s = 0;               // erfolgreiche Verbindung -> Backoff zurücksetzen
+  if (m_cur_tg == 0)             // Standby: verbunden/registriert, aber keine Brücke
+  {
+    setIdle(true);
+    return;
+  }
   if (m_announce)
   {
     stringstream ss;
@@ -406,7 +436,6 @@ void ModuleTetraBrew::onConnected(int ep)
     processEvent(ss.str());
   }
   if (m_status_tmo) { m_status_tmo->reset(); m_status_tmo->setEnable(true); }
-  m_backoff_s = 0;               // erfolgreiche Verbindung -> Backoff zurücksetzen
   setIdle(false);
 }
 
@@ -414,15 +443,15 @@ void ModuleTetraBrew::onConnected(int ep)
 void ModuleTetraBrew::onDisconnected(int ep)
 {
   if (ep != m_active) return;
-  if (m_announce) processEvent("brew_disconnected");
+  if (m_announce && m_cur_tg) processEvent("brew_disconnected");  // in Standby stumm
   if (m_status_tmo) m_status_tmo->setEnable(false);
 
-  // Permanent-Knoten: Verbindung nicht aufgeben, sondern mit Backoff neu aufbauen.
-  // m_active bleibt erhalten, damit der Audio-Pfad + die Sprecher-Zuordnung stimmen.
+  // Permanent-Knoten/Standby: Verbindung nicht aufgeben, mit Backoff neu aufbauen.
+  // m_active bleibt erhalten, damit Audio-Pfad + Sprecher-Zuordnung stimmen.
   if (m_want_connected)
   {
-    m_reconnect_tg = m_cur_tg ? m_cur_tg : m_default_tg;
-    setIdle(false);
+    m_reconnect_tg = m_cur_tg;      // 0 = Standby (nur registrieren, nicht affiliieren)
+    setIdle(m_cur_tg == 0);
     scheduleReconnect();
     return;
   }
@@ -533,7 +562,17 @@ void ModuleTetraBrew::onTgIdleReset(Async::Timer*)
 
 void ModuleTetraBrew::onAutoConnect(Async::Timer*)
 {
-  if (m_active < 0)
+  if (m_standby && m_active < 0)
+  {
+    // STANDBY-Erststart: eingebucht ohne TG, Modul bleibt SvxLink-inaktiv.
+    // Registrierung erfolgt auf WS-up (sendRegister), Affiliation NICHT (m_cur_tg=0).
+    m_active = 0;
+    m_cur_tg = 0;
+    m_want_connected = true;
+    cout << "ModuleTetraBrew: STANDBY -> verbinde (registriert, keine TG).\n";
+    m_eps[0].conn->connect();
+  }
+  else if (m_active < 0)
   {
     // Erststart (oder Modul war nicht aktiv): Modul aktivieren -> activateInit()
     // verbindet mit DEFAULT_TG (bzw. m_pending_tg).
@@ -543,8 +582,9 @@ void ModuleTetraBrew::onAutoConnect(Async::Timer*)
   }
   else if (m_want_connected && !m_eps[m_active].conn->isConnected())
   {
-    // Permanent-Knoten nach Abriss: aktiven Endpunkt neu verbinden.
-    uint32_t tg = m_reconnect_tg ? m_reconnect_tg : m_default_tg;
+    // Permanent-Knoten/Standby nach Abriss: aktiven Endpunkt neu verbinden.
+    // tg = zuletzt gewollte TG (0 = Standby -> nur registrieren, nicht affiliieren).
+    uint32_t tg = m_reconnect_tg;
     cout << "ModuleTetraBrew: Reconnect zu '" << m_eps[m_active].name
          << "' TG " << tg << ".\n";
     if (tg) m_eps[m_active].conn->selectTg(tg);
