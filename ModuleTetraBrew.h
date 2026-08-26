@@ -104,6 +104,7 @@ class ModuleTetraBrew : public Module
     void onConnected(int ep);
     void onDisconnected(int ep);
     void onTetraTalkStart(uint32_t issi, int ep);   // gebundener ep hinten (sigc::bind)
+    void onSds(uint32_t from, std::string text, int ep);   // SDS-Steuerung von TETRA-Seite
     void onTetraTalkStop(int ep);
     void onTxTimeout(Async::Timer *t);
     void onRxTimeout(Async::Timer *t);      // TETRA->FM zu lang -> Audio sperren

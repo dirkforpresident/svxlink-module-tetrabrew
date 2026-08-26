@@ -6,6 +6,7 @@
 */
 #include <iostream>
 #include <cstdlib>
+#include <cctype>
 #include <sstream>
 #include <vector>
 #include <set>
@@ -142,6 +143,7 @@ bool ModuleTetraBrew::initialize(void)
     c->sigDisconnected.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onDisconnected), idx));
     c->sigTalkStart.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onTetraTalkStart), idx));
     c->sigTalkStop.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onTetraTalkStop), idx));
+    c->sigSds.connect(sigc::bind(sigc::mem_fun(*this, &ModuleTetraBrew::onSds), idx));
   }
 
   // Lokaler FM-Repeat: FM-RX zusätzlich direkt auf FM-TX legen (Vorrang vor TETRA),
@@ -484,6 +486,45 @@ void ModuleTetraBrew::onTetraTalkStart(uint32_t issi, int ep)
   if (m_rx_tmo) { m_rx_tmo->reset(); m_rx_tmo->setEnable(true); }
   stringstream ss; ss << "tetra_talker " << issi;
   processEvent(ss.str());
+}
+
+
+void ModuleTetraBrew::onSds(uint32_t from, string text, int ep)
+{
+  // SDS-Steuerung von der TETRA-Seite (Model 1: User nennt die TG).
+  // "<tg>" -> Brücke auf diese TG einbuchen. "0"/"off" -> parken (Standby).
+  if (ep != m_active) return;
+  string t;                              // erstes alnum-Token, klein
+  for (size_t i = 0; i < text.size(); i++)
+  {
+    unsigned char ch = text[i];
+    if (isalnum(ch)) t.push_back((char)tolower(ch));
+    else if (!t.empty()) break;
+  }
+  cout << "TetraBrew: SDS von ISSI " << from << " = '" << t << "'\n";
+
+  bool numeric = !t.empty();
+  for (size_t i = 0; i < t.size(); i++) if (!isdigit((unsigned char)t[i])) numeric = false;
+  uint32_t tg = numeric ? (uint32_t)strtoul(t.c_str(), 0, 10) : 0;
+  TetraBrewConnection *conn = m_eps[ep].conn;
+
+  if (t == "off" || tg == 0)             // trennen -> Standby
+  {
+    if (m_cur_tg) deactivateMe();
+    conn->sendSds(from, "DO0RAM: getrennt");
+    return;
+  }
+  if (!numeric) { conn->sendSds(from, "DO0RAM: ? (TG-Nr senden)"); return; }
+  int idx = findEndpoint(tg);
+  if (idx < 0 || !tgAllowed(m_eps[idx], tg))
+  {
+    conn->sendSds(from, "DO0RAM: TG " + t + " nicht erlaubt");
+    return;
+  }
+  // Einbuchen: aus Standby aktivieren, sonst nur TG umschalten.
+  if (m_cur_tg == 0) { m_pending_tg = tg; activateMe(); }  // Aktivierung sagt TG selbst an
+  else               { selectTg(tg); }                     // (announceLinked im else-Zweig)
+  conn->sendSds(from, "DO0RAM: TG " + t + " aktiv");
 }
 
 

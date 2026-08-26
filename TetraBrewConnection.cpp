@@ -44,8 +44,8 @@ using namespace Async;
 namespace {
   const uint8_t CLASS_SUBSCRIBER = 0xF0, CLASS_CALL = 0xF1, CLASS_FRAME = 0xF2;
   const uint8_t SUB_REGISTER = 0x01, SUB_AFFILIATE = 0x08, SUB_DEAFFILIATE = 0x09;
-  const uint8_t CALL_GROUP_TX = 0x02, CALL_GROUP_IDLE = 0x03;
-  const uint8_t FRAME_TRAFFIC = 0x00;
+  const uint8_t CALL_GROUP_TX = 0x02, CALL_GROUP_IDLE = 0x03, CALL_SHORT_TRANSFER = 0x0B;
+  const uint8_t FRAME_TRAFFIC = 0x00, FRAME_SDS_TRANSFER = 0x01, FRAME_SDS_REPORT = 0x02;
   const uint16_t STE_LENGTH_BITS = 288;
   const int ACELP_FULL_BYTES = 35;
   const int SAMPLES_PER_FRAME_8K = 480;   // 60 ms @ 8 kHz
@@ -682,6 +682,32 @@ void TetraBrewConnection::onWsMessage(const uint8_t *data, size_t len)
       sigTalkStop();
     }
   }
+  else if (cls == CLASS_CALL && typ == CALL_SHORT_TRANSFER && len >= 26)
+  {
+    // SDS-Vorspann: nur wenn an UNSERE ISSI adressiert, Absender merken (uuid->src).
+    if (get_u32(data + 22) == m_src_issi)
+    {
+      string cu(reinterpret_cast<const char*>(data + 2), 16);
+      m_sds_src[cu] = get_u32(data + 18);
+      if (m_sds_src.size() > 32) m_sds_src.erase(m_sds_src.begin());
+    }
+  }
+  else if (cls == CLASS_FRAME && typ == FRAME_SDS_TRANSFER && len >= 20)
+  {
+    // Text-SDS: nur wenn Vorspann an uns kam. Layout (nach 18-Byte-Header):
+    // [len_bits u16][SDS-TL: 82(PID Text) 0c <ref> 01(8-bit)] + ASCII-Text.
+    string cu(reinterpret_cast<const char*>(data + 2), 16);
+    map<string,uint32_t>::iterator it = m_sds_src.find(cu);
+    if (it == m_sds_src.end()) return;
+    uint32_t from = it->second;
+    m_sds_src.erase(it);
+    size_t nbytes = (data[18] | (data[19] << 8)) / 8;   // len_bits -> Bytes
+    if (nbytes < 5 || 20 + nbytes > len) return;
+    const uint8_t *c = data + 20;
+    if (c[0] != 0x82) return;                            // nur Text-Messaging
+    sendSdsReport(data + 2, from);                       // ACK -> kein "failed" beim Absender
+    sigSds(from, string(reinterpret_cast<const char*>(c + 4), nbytes - 4));
+  }
 }
 
 
@@ -693,6 +719,54 @@ void TetraBrewConnection::sendRegister(void)
   m.push_back(char(CLASS_SUBSCRIBER)); m.push_back(char(SUB_REGISTER));
   put_u32(m, m_src_issi); put_u64(m, ts); put_u32(m, 0);
   wsSend(reinterpret_cast<const uint8_t*>(m.data()), m.size());
+}
+
+
+void TetraBrewConnection::sendSds(uint32_t dest_issi, const string& text)
+{
+  // Text-SDS an eine ISSI (Format wie von BlueStations gesehen): erst der
+  // SHORT_TRANSFER-Vorspann (58 Byte, Rest 0), dann FRAME/SDS-TRANSFER mit
+  // SDS-TL-Header [82 0c <ref> 01] + 8-bit-ASCII-Text. Gleiche uuid für beide.
+  if (m_state != ST_WS_UP) return;
+  uint8_t uuid[16]; rand_bytes(uuid, 16);
+  string s;
+  s.push_back(char(CLASS_CALL)); s.push_back(char(CALL_SHORT_TRANSFER));
+  s.append(reinterpret_cast<const char*>(uuid), 16);
+  put_u32(s, m_src_issi); put_u32(s, dest_issi);
+  s.resize(58, 0);
+  wsSend(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+
+  string f;
+  f.push_back(char(CLASS_FRAME)); f.push_back(char(FRAME_SDS_TRANSFER));
+  f.append(reinterpret_cast<const char*>(uuid), 16);
+  put_u16(f, static_cast<uint16_t>((4 + text.size()) * 8));   // len in Bits
+  f.push_back(char(0x82)); f.push_back(char(0x0c));
+  f.push_back(char(++m_sds_ref)); f.push_back(char(0x01));
+  f.append(text);
+  wsSend(reinterpret_cast<const uint8_t*>(f.data()), f.size());
+}
+
+
+void TetraBrewConnection::sendSdsReport(const uint8_t *uuid, uint32_t dest_issi)
+{
+  // Empfangsbestätigung (Delivery-Report) für eine empfangene SDS, damit das
+  // Absender-Radio kein "failed" zeigt. Format wie von echten Radios gesehen:
+  // SHORT_TRANSFER-Vorspann (gleiche uuid -> routet zum Absender zurück) +
+  // FRAME/SDS-REPORT (len_bits=8, Status 0x00 = empfangen).
+  if (m_state != ST_WS_UP) return;
+  string s;
+  s.push_back(char(CLASS_CALL)); s.push_back(char(CALL_SHORT_TRANSFER));
+  s.append(reinterpret_cast<const char*>(uuid), 16);
+  put_u32(s, m_src_issi); put_u32(s, dest_issi);
+  s.resize(58, 0);
+  wsSend(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+
+  string f;
+  f.push_back(char(CLASS_FRAME)); f.push_back(char(FRAME_SDS_REPORT));
+  f.append(reinterpret_cast<const char*>(uuid), 16);
+  put_u16(f, 8);
+  f.push_back(char(0x00));
+  wsSend(reinterpret_cast<const uint8_t*>(f.data()), f.size());
 }
 
 

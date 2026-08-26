@@ -68,6 +68,7 @@ class TetraBrewConnection : public sigc::trackable
     sigc::signal<void>            sigDisconnected;
     sigc::signal<void, uint32_t>  sigTalkStart;   // ISSI des TETRA-Sprechers
     sigc::signal<void>            sigTalkStop;
+    sigc::signal<void, uint32_t, std::string> sigSds;   // (Absender-ISSI, Text) einer SDS an uns
 
     // --- vom AcelpEncoderSink aufgerufen (ein fertiger 35-Byte-ACELP-Frame) ---
     void handleEncodedFrame(const uint8_t acelp35[35]);
@@ -99,6 +100,8 @@ class TetraBrewConnection : public sigc::trackable
 
     // TETRA->FM: call_uuid -> GSSI (nur gebrückte Gruppe auf FM lassen)
     std::map<std::string, uint32_t> m_call_gssi;
+    std::map<std::string, uint32_t> m_sds_src;   // uuid -> Absender-ISSI (SHORT_TRANSFER->FRAME)
+    uint8_t     m_sds_ref = 0;                    // Message-Reference-Zähler für gesendete SDS
 
     // Codec + Audio-Ketten
     tetra_codec *m_encoder = 0;
@@ -134,6 +137,10 @@ class TetraBrewConnection : public sigc::trackable
     void sendGroupTx(void);
     void sendGroupIdle(void);
     void sendVoiceFrame(const uint8_t acelp35[35]);
+  public:
+    void sendSds(uint32_t dest_issi, const std::string& text);   // Text-SDS an eine ISSI
+  private:
+    void sendSdsReport(const uint8_t *uuid, uint32_t dest_issi); // Empfangsbestätigung (ACK)
 
     void teardownAudio(void);
     void buildAudio(void);
