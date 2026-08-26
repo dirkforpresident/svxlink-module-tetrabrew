@@ -57,6 +57,7 @@ class ModuleTetraBrew : public Module
     int      m_status_interval = 0;    // periodische „verbunden mit"-Ansage (Sek), 0 = aus
     bool     m_announce    = true;
     bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
+    int      m_tg_idle_reset = 0;      // s Ruhe auf Fremd-TG -> zurück auf DEFAULT_TG (0 = aus)
     bool     m_local_repeat = true;    // lokalen FM-Repeat (RX->TX) parallel weiterlaufen lassen
     bool     m_want_connected = false; // Soll-Zustand: verbunden bleiben (Permanent-Reconnect)
     uint32_t m_reconnect_tg = 0;       // TG, auf die nach Abriss wieder verbunden wird
@@ -75,6 +76,7 @@ class ModuleTetraBrew : public Module
     Async::Timer         *m_tx_tmo   = 0;   // MAX_TX_TIME-Wächter
     Async::Timer         *m_status_tmo = 0; // periodische Status-Ansage
     Async::Timer         *m_autocon_tmo = 0; // verzögerter Auto-Connect beim Start
+    Async::Timer         *m_tg_reset_tmo = 0; // Auto-Rückfall auf DEFAULT_TG bei Ruhe
 
     // --- Module-Overrides ---
     bool initialize(void);
@@ -102,6 +104,8 @@ class ModuleTetraBrew : public Module
     void onTetraTalkStop(int ep);
     void onTxTimeout(Async::Timer *t);
     void onStatusTimer(Async::Timer *t);    // periodische „verbunden mit"-Ansage
+    void onTgIdleReset(Async::Timer *t);    // Ruhe abgelaufen -> zurück auf DEFAULT_TG
+    void bumpTgIdle(void);                  // Ruhe-Timer neu starten (bei Aktivität)
     void onAutoConnect(Async::Timer *t);    // AUTO_CONNECT: Selbst-Aktivierung beim Start
 
 };  /* class ModuleTetraBrew */

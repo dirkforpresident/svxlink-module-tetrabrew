@@ -90,6 +90,7 @@ bool ModuleTetraBrew::initialize(void)
   cfg().getValue(cfgName(), "ANNOUNCE", m_announce);
   cfg().getValue(cfgName(), "AUTO_CONNECT", m_auto_connect);
   cfg().getValue(cfgName(), "LOCAL_REPEAT", m_local_repeat);
+  cfg().getValue(cfgName(), "TG_IDLE_RESET", m_tg_idle_reset);
 
   string servers;
   cfg().getValue(cfgName(), "BREW_SERVERS", servers);
@@ -257,6 +258,7 @@ void ModuleTetraBrew::deactivateCleanup(void)
   m_cur_tg = 0;
   if (m_tx_tmo) m_tx_tmo->setEnable(false);
   if (m_status_tmo) m_status_tmo->setEnable(false);
+  if (m_tg_reset_tmo) m_tg_reset_tmo->setEnable(false);
   setIdle(true);
 }
 
@@ -301,6 +303,7 @@ void ModuleTetraBrew::squelchOpen(bool is_open)
     if (is_open) { m_tx_tmo->reset(); m_tx_tmo->setEnable(true); }
     else         { m_tx_tmo->setEnable(false); }
   }
+  if (is_open) bumpTgIdle();       // FM-Aktivität -> Ruhe-Timer neu starten
 }
 
 
@@ -360,6 +363,7 @@ void ModuleTetraBrew::selectTg(uint32_t gssi)
     announceLinked();
   }
   setIdle(false);
+  bumpTgIdle();   // Ruhe-Timer je nach Ziel-TG scharf/aus
 }
 
 
@@ -434,6 +438,7 @@ void ModuleTetraBrew::onTetraTalkStart(uint32_t issi, int ep)
 {
   if (ep != m_active) return;
   setIdle(false);
+  bumpTgIdle();                    // TETRA-Aktivität -> Ruhe-Timer neu starten
   stringstream ss; ss << "tetra_talker " << issi;
   processEvent(ss.str());
 }
@@ -461,6 +466,36 @@ void ModuleTetraBrew::onStatusTimer(Async::Timer*)
   if (m_active >= 0 && m_eps[m_active].conn->isConnected())
   {
     announceLinked();
+  }
+}
+
+
+void ModuleTetraBrew::bumpTgIdle(void)
+{
+  // Ruhe-Timer nur laufen lassen, wenn wir auf einer NICHT-Default-TG sind.
+  // Bei Aktivität (FM-Tx oder TETRA-Sprecher) neu starten; auf der Default-TG
+  // oder wenn das Feature aus ist -> abschalten.
+  if (m_tg_idle_reset <= 0 || m_default_tg == 0 ||
+      m_active < 0 || m_cur_tg == 0 || m_cur_tg == m_default_tg)
+  {
+    if (m_tg_reset_tmo) m_tg_reset_tmo->setEnable(false);
+    return;
+  }
+  delete m_tg_reset_tmo;
+  m_tg_reset_tmo = new Async::Timer(m_tg_idle_reset * 1000, Async::Timer::TYPE_ONESHOT);
+  m_tg_reset_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onTgIdleReset));
+}
+
+
+void ModuleTetraBrew::onTgIdleReset(Async::Timer*)
+{
+  // Lange Ruhe auf einer Fremd-TG -> zurück auf die Heimat-TG (DEFAULT_TG),
+  // damit die Brücke nicht versehentlich dauerhaft in einer TG stehen bleibt.
+  if (m_tg_reset_tmo) m_tg_reset_tmo->setEnable(false);
+  if (m_active >= 0 && m_default_tg != 0 && m_cur_tg != m_default_tg)
+  {
+    cout << "TetraBrew: Ruhe-Rückfall -> DEFAULT_TG " << m_default_tg << "\n";
+    selectTg(m_default_tg);
   }
 }
 
