@@ -252,10 +252,10 @@ TetraBrewConnection::TetraBrewConnection(const string& host, int port,
                                          const string& host_header,
                                          const string& user, const string& pass,
                                          const string& realm, uint32_t src_issi,
-                                         float rx_gain)
+                                         float rx_gain, int prebuf_ms)
   : m_host(host), m_host_header(host_header.empty() ? host : host_header),
     m_user(user), m_pass(pass), m_realm(realm),
-    m_port(port), m_rx_gain(rx_gain), m_src_issi(src_issi)
+    m_port(port), m_rx_gain(rx_gain), m_prebuf_ms(prebuf_ms), m_src_issi(src_issi)
 {
   m_encoder = tetra_encoder_create();
   m_decoder = tetra_decoder_create();
@@ -286,7 +286,9 @@ void TetraBrewConnection::buildAudio(void)
   // RX: AcelpDecoderSource -> Fifo(Jitter) -> Interpolator(2) -> 16k
   m_dec  = new AcelpDecoderSource;
   m_fifo = new AudioFifo(8000);           // 1 s @ 8 kHz
-  m_fifo->setPrebufSamples(960);          // ~120 ms vor Ausgabe puffern
+  int pre = m_prebuf_ms * 8;              // 8 Samples/ms @ 8 kHz
+  if (pre < 240) pre = 240; if (pre > 6400) pre = 6400;   // 30 ms .. 800 ms
+  m_fifo->setPrebufSamples(pre);          // Jitter-Vorpuffer (RX_JITTER_MS)
   m_fifo->setOverwrite(true);
   m_up   = new AudioInterpolator(2, coeff_16_8, coeff_16_8_taps);
   m_dec->registerSink(m_fifo);

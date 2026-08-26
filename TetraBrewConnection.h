@@ -44,7 +44,7 @@ class TetraBrewConnection : public sigc::trackable
                         const std::string& host_header,
                         const std::string& user, const std::string& pass,
                         const std::string& realm, uint32_t src_issi,
-                        float rx_gain);
+                        float rx_gain, int prebuf_ms = 120);
     ~TetraBrewConnection(void);
 
     // --- Audio-Anschlusspunkte fürs Modul ---
@@ -80,6 +80,7 @@ class TetraBrewConnection : public sigc::trackable
     std::string m_host, m_host_header, m_user, m_pass, m_realm;
     int         m_port;
     float       m_rx_gain;
+    int         m_prebuf_ms = 120;   // Jitter-Vorpuffer (ms) vor Ausgabe TETRA->FM
     uint32_t    m_src_issi;
     uint32_t    m_cur_tg = 0;
     bool        m_tetra_active = false;   // TETRA->FM Ruf läuft

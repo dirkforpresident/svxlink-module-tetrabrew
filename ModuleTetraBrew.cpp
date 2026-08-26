@@ -88,6 +88,7 @@ bool ModuleTetraBrew::initialize(void)
   cfg().getValue(cfgName(), "SRC_ISSI", m_src_issi);
   cfg().getValue(cfgName(), "MAX_TX_TIME", m_max_tx_time);
   cfg().getValue(cfgName(), "RX_MAX_TIME", m_rx_max_time);
+  cfg().getValue(cfgName(), "RX_JITTER_MS", m_rx_jitter_ms);
   cfg().getValue(cfgName(), "STATUS_INTERVAL", m_status_interval);
   cfg().getValue(cfgName(), "ANNOUNCE", m_announce);
   cfg().getValue(cfgName(), "AUTO_CONNECT", m_auto_connect);
@@ -240,7 +241,7 @@ bool ModuleTetraBrew::loadEndpoint(const string& name)
   if (ep.gssi_max == 0) ep.gssi_max = 16777215;   // Default: ganzer 24-Bit-Bereich
 
   ep.conn = new TetraBrewConnection(host, port, host_header, user, pass, realm,
-                                    src_issi, static_cast<float>(rx_gain));
+                                    src_issi, static_cast<float>(rx_gain), m_rx_jitter_ms);
   m_eps.push_back(ep);
   cout << "\t  Endpunkt '" << name << "': " << host << ":" << port
        << " GSSI " << ep.gssi_min << "-" << ep.gssi_max

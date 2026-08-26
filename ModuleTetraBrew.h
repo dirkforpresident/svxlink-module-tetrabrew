@@ -55,6 +55,7 @@ class ModuleTetraBrew : public Module
     uint32_t m_src_issi    = 0;        // Standard-ISSI (pro Endpunkt überschreibbar)
     int      m_max_tx_time = 0;        // FM->TETRA-Durchgangslimit (Sek), 0 = aus
     int      m_rx_max_time = 0;        // TETRA->FM-Durchgangslimit (Sek), 0 = aus
+    int      m_rx_jitter_ms = 120;     // Jitter-Vorpuffer TETRA->FM (ms) — hoeher bei Mesh/Netz-Jitter
     int      m_status_interval = 0;    // periodische „verbunden mit"-Ansage (Sek), 0 = aus
     bool     m_announce    = true;
     bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
