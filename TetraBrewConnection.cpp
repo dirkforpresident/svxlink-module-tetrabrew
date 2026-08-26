@@ -667,7 +667,7 @@ void TetraBrewConnection::onWsMessage(const uint8_t *data, size_t len)
       if (v > 1.0f) v = 1.0f; else if (v < -1.0f) v = -1.0f;
       f[i] = v;
     }
-    if (m_dec) m_dec->pushSamples(f, SAMPLES_PER_FRAME_8K);
+    if (m_dec && !m_rx_muted) m_dec->pushSamples(f, SAMPLES_PER_FRAME_8K);
   }
   else if (cls == CLASS_CALL && typ == CALL_GROUP_IDLE && len >= 18)
   {

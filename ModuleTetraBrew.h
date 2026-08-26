@@ -54,6 +54,7 @@ class ModuleTetraBrew : public Module
     uint32_t m_default_tg  = 0;
     uint32_t m_src_issi    = 0;        // Standard-ISSI (pro Endpunkt überschreibbar)
     int      m_max_tx_time = 0;        // FM->TETRA-Durchgangslimit (Sek), 0 = aus
+    int      m_rx_max_time = 0;        // TETRA->FM-Durchgangslimit (Sek), 0 = aus
     int      m_status_interval = 0;    // periodische „verbunden mit"-Ansage (Sek), 0 = aus
     bool     m_announce    = true;
     bool     m_auto_connect = false;   // beim Start automatisch aktivieren (Permanent-Knoten)
@@ -73,7 +74,8 @@ class ModuleTetraBrew : public Module
     Async::AudioSplitter  *m_rx_split = 0;   // FM-RX -> alle Endpunkte (nur aktiver sendet)
     Async::AudioSelector  *m_tx_sel   = 0;   // Endpunkte + Lokal-Monitor -> FM-TX (Auto-Select)
     Async::AudioPassthrough *m_local_mon = 0; // FM-RX -> FM-TX (lokaler Repeat, wenn aktiv)
-    Async::Timer         *m_tx_tmo   = 0;   // MAX_TX_TIME-Wächter
+    Async::Timer         *m_tx_tmo   = 0;   // MAX_TX_TIME-Wächter (FM->TETRA)
+    Async::Timer         *m_rx_tmo   = 0;   // RX_MAX_TIME-Wächter (TETRA->FM)
     Async::Timer         *m_status_tmo = 0; // periodische Status-Ansage
     Async::Timer         *m_autocon_tmo = 0; // verzögerter Auto-Connect beim Start
     Async::Timer         *m_tg_reset_tmo = 0; // Auto-Rückfall auf DEFAULT_TG bei Ruhe
@@ -103,6 +105,7 @@ class ModuleTetraBrew : public Module
     void onTetraTalkStart(uint32_t issi, int ep);   // gebundener ep hinten (sigc::bind)
     void onTetraTalkStop(int ep);
     void onTxTimeout(Async::Timer *t);
+    void onRxTimeout(Async::Timer *t);      // TETRA->FM zu lang -> Audio sperren
     void onStatusTimer(Async::Timer *t);    // periodische „verbunden mit"-Ansage
     void onTgIdleReset(Async::Timer *t);    // Ruhe abgelaufen -> zurück auf DEFAULT_TG
     void bumpTgIdle(void);                  // Ruhe-Timer neu starten (bei Aktivität)

@@ -86,6 +86,7 @@ bool ModuleTetraBrew::initialize(void)
   cfg().getValue(cfgName(), "DEFAULT_TG", m_default_tg);
   cfg().getValue(cfgName(), "SRC_ISSI", m_src_issi);
   cfg().getValue(cfgName(), "MAX_TX_TIME", m_max_tx_time);
+  cfg().getValue(cfgName(), "RX_MAX_TIME", m_rx_max_time);
   cfg().getValue(cfgName(), "STATUS_INTERVAL", m_status_interval);
   cfg().getValue(cfgName(), "ANNOUNCE", m_announce);
   cfg().getValue(cfgName(), "AUTO_CONNECT", m_auto_connect);
@@ -159,6 +160,15 @@ bool ModuleTetraBrew::initialize(void)
     m_tx_tmo = new Timer(m_max_tx_time * 1000, Timer::TYPE_ONESHOT);
     m_tx_tmo->setEnable(false);
     m_tx_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onTxTimeout));
+  }
+
+  // RX_MAX_TIME-Wächter (optional): begrenzt einen TETRA->FM-Durchgang, damit ein
+  // hängender TETRA-Sender das FM-Relais nicht dauerhaft keyt.
+  if (m_rx_max_time > 0)
+  {
+    m_rx_tmo = new Timer(m_rx_max_time * 1000, Timer::TYPE_ONESHOT);
+    m_rx_tmo->setEnable(false);
+    m_rx_tmo->expired.connect(mem_fun(*this, &ModuleTetraBrew::onRxTimeout));
   }
 
   // Periodische „verbunden mit"-Status-Ansage (läuft nur solange verbunden)
@@ -257,6 +267,7 @@ void ModuleTetraBrew::deactivateCleanup(void)
   m_active = -1;
   m_cur_tg = 0;
   if (m_tx_tmo) m_tx_tmo->setEnable(false);
+  if (m_rx_tmo) m_rx_tmo->setEnable(false);
   if (m_status_tmo) m_status_tmo->setEnable(false);
   if (m_tg_reset_tmo) m_tg_reset_tmo->setEnable(false);
   setIdle(true);
@@ -439,6 +450,9 @@ void ModuleTetraBrew::onTetraTalkStart(uint32_t issi, int ep)
   if (ep != m_active) return;
   setIdle(false);
   bumpTgIdle();                    // TETRA-Aktivität -> Ruhe-Timer neu starten
+  // Neuer TETRA-Durchgang: evtl. Sperre aufheben + RX-Zeitwächter (neu) starten.
+  m_eps[ep].conn->muteRx(false);
+  if (m_rx_tmo) { m_rx_tmo->reset(); m_rx_tmo->setEnable(true); }
   stringstream ss; ss << "tetra_talker " << issi;
   processEvent(ss.str());
 }
@@ -447,6 +461,8 @@ void ModuleTetraBrew::onTetraTalkStart(uint32_t issi, int ep)
 void ModuleTetraBrew::onTetraTalkStop(int ep)
 {
   if (ep != m_active) return;
+  if (m_rx_tmo) m_rx_tmo->setEnable(false);   // Durchgang zu Ende -> Wächter aus
+  m_eps[ep].conn->muteRx(false);              // Sperre für nächsten Durchgang lösen
   setIdle(!squelchIsOpen());
 }
 
@@ -456,6 +472,21 @@ void ModuleTetraBrew::onTxTimeout(Async::Timer*)
   // FM-Träger zu lang offen -> FM->TETRA-Ruf zwangsweise beenden (Schutz).
   if (m_active >= 0) m_eps[m_active].conn->setLocalTx(false);
   if (m_tx_tmo) m_tx_tmo->setEnable(false);
+}
+
+
+void ModuleTetraBrew::onRxTimeout(Async::Timer*)
+{
+  // TETRA->FM-Durchgang zu lang (hängender TETRA-Sender) -> Audio sperren, damit
+  // das FM-Relais abfallen kann. Sperre bleibt bis der Durchgang endet
+  // (onTetraTalkStop) bzw. ein neuer Durchgang beginnt (onTetraTalkStart).
+  if (m_rx_tmo) m_rx_tmo->setEnable(false);
+  if (m_active >= 0)
+  {
+    cout << "TetraBrew: RX_MAX_TIME erreicht -> TETRA->FM gesperrt bis Durchgangsende\n";
+    m_eps[m_active].conn->muteRx(true);
+    setIdle(!squelchIsOpen());
+  }
 }
 
 

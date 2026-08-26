@@ -56,6 +56,7 @@ class TetraBrewConnection : public sigc::trackable
     void disconnect(void);
     void selectTg(uint32_t gssi);         // Talkgroup wählen (0 = trennen)
     void setLocalTx(bool on);             // FM-Squelch -> GROUP_TX/GROUP_IDLE
+    void muteRx(bool on) { m_rx_muted = on; }  // TETRA->FM-Audio unterdrücken (Zeitsperre)
     bool tetraActive(void) const { return m_tetra_active; }
     bool isConnected(void) const { return m_state == ST_WS_UP; }
     uint32_t currentTg(void) const { return m_cur_tg; }
@@ -81,6 +82,7 @@ class TetraBrewConnection : public sigc::trackable
     uint32_t    m_src_issi;
     uint32_t    m_cur_tg = 0;
     bool        m_tetra_active = false;   // TETRA->FM Ruf läuft
+    bool        m_rx_muted = false;       // TETRA->FM-Audio unterdrückt (Zeitsperre gerissen)
     bool        m_local_tx = false;       // FM->TETRA Ruf läuft
 
     // Netz / Handshake-Zustand
