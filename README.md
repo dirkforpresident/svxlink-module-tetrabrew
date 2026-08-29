@@ -1,10 +1,11 @@
 # ModuleTetraBrew
 
-**Häng deinen SvxLink-FM-Repeater über BREW an ein TETRA-Netz — und mach mit bei [FreeTetra](https://freetetra.de).**
+Bindet einen SvxLink-FM-Repeater über das BREW-Protokoll an ein TETRA-Netz an —
+zum Beispiel an das offene [FreeTetra](https://freetetra.de)-Netz.
 
-Ein natives SvxLink-Modul (wie ModuleEchoLink), das einen analogen **FM-Repeater** über das
-**BREW-Protokoll** (TETRA, ACELP-Codec) mit einem oder mehreren TETRA-Netzen verbindet.
-Talkgroup-Wahl per DTMF, deutsche Sprachansagen, läuft auf **alten wie neuen** Repeatern.
+Ein natives SvxLink-Modul (wie ModuleEchoLink), das einen analogen FM-Repeater über
+BREW (TETRA, ACELP-Codec) mit einem oder mehreren TETRA-Netzen verbindet: Talkgroup-Wahl
+per DTMF, deutsche Sprachansagen, läuft auf alten wie neuen Repeatern.
 
 ---
 
@@ -34,8 +35,7 @@ Details: **[INSTALL.md](INSTALL.md)**
 > radioid.net) und die üblichen Bau-Werkzeuge (`g++`, `python3` — meist schon da). Der Installer
 > fasst nur das Modul an (Rx/Tx, Audio, Logic, Kennung bleiben unberührt) und sichert vorher alles.
 
-Mehr willst du fürs Mitmachen nicht wissen. Alles darunter ist Nachschlagewerk (Optionen,
-mehrere Netze, Technik).
+Alles Weitere unten ist Nachschlagewerk: Optionen, mehrere Netze, Technik.
 
 ---
 
@@ -46,11 +46,11 @@ mehrere Netze, Technik).
 connecten — kein Account, keine Anmeldung. So entsteht ein gemeinsames Amateurfunk-TETRA-Netz,
 in dem sich FM- und TETRA-Leute treffen.
 
-- **FM-Repeater** kommen über *dieses Modul* rein.
+- **FM-Repeater** kommen über dieses Modul rein.
 - **TETRA-BlueStations** sprechen BREW von Haus aus.
 
-**TETRA + FM ist das Geile.** Bei wenig Betrieb bringt das die Modi und die Leute
-zusammen, statt dass jeder ein eigenes Gerät für jedes Netz braucht.
+FM und TETRA in einem Netz: bei wenig Betrieb bringt das die Modi und die Leute zusammen,
+statt dass jeder ein eigenes Gerät für jedes Netz braucht.
 
 ### TETRA-Kern & FM-Rand — wie beide Seiten zusammenpassen
 
@@ -211,5 +211,3 @@ dabei). Auf ganz neuem SvxLink läuft es identisch — dort wird irgendwann nur 
 
 GPL v2+ (wie SvxLink). Nutzung auf eigene Verantwortung — du bist als Repeater-Verantwortlicher
 für alles zuständig, was über deine Brücke ausgesendet wird.
-
-*73 & viel Spaß beim Vernetzen. — DO1XX*
