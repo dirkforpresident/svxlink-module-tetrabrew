@@ -51,6 +51,7 @@ class ModuleTetraBrew : public Module
     };
 
     // --- Config (global) ---
+    std::string m_call;                // Rufzeichen -> Login-Name + abgeleitete ISSI
     uint32_t m_default_tg  = 0;
     uint32_t m_src_issi    = 0;        // Standard-ISSI (pro Endpunkt überschreibbar)
     int      m_max_tx_time = 0;        // FM->TETRA-Durchgangslimit (Sek), 0 = aus

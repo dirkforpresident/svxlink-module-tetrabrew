@@ -11,8 +11,8 @@ per DTMF, deutsche Sprachansagen, läuft auf alten wie neuen Repeatern.
 
 ## Am Netz — in einem Schritt
 
-`install.sh` macht **alles**: baut Codec + Modul **gegen dein SvxLink** (alt wie neu), fragt deine
-RadioID, trägt das Modul ein, testet den Neustart — und **rollt bei jedem Fehler automatisch
+`install.sh` macht **alles**: baut Codec + Modul **gegen dein SvxLink** (alt wie neu), fragt dein
+Rufzeichen, trägt das Modul ein, testet den Neustart — und **rollt bei jedem Fehler automatisch
 zurück**. Dein laufendes Relais kann dabei nicht kaputtgehen.
 
 ```bash
@@ -22,18 +22,23 @@ cd svxlink-module-tetrabrew
 # Erst nur prüfen (ändert NICHTS am System):
 sudo ./install.sh --check
 
-# Installieren — fragt RadioID, zeigt eine Vorschau, du bestätigst:
-sudo ./install.sh --radioid <DEINE-RADIOID>
+# Installieren — fragt Rufzeichen, zeigt eine Vorschau, du bestätigst:
+sudo ./install.sh --call <DEIN-RUFZEICHEN>
 ```
+
+Aus dem Rufzeichen wird automatisch eine feste, gleichbleibende **ISSI** erzeugt (die Nummer, über
+die dein Repeater von der TETRA-Seite erreichbar ist). Sie steht im
+[Verzeichnis](https://freetetra.de/nodes.html). Wer eine eigene DMR-RadioID nutzen will:
+`--issi <RadioID>` zusätzlich angeben.
 
 **Fertig.** Auftasten → `5#` → du bist im FreeTetra-Netz (Talkgroup 1). Andere TG: `<tg>#`, aus: `#`.
 
 Status prüfen: `sudo ./install.sh --status` · Entfernen: `sudo ./install.sh --uninstall` ·
 Details: **[INSTALL.md](INSTALL.md)**
 
-> **Du brauchst nur:** einen laufenden SvxLink-Repeater, deine **RadioID** (kostenlos auf
-> radioid.net) und die üblichen Bau-Werkzeuge (`g++`, `python3` — meist schon da). Der Installer
-> fasst nur das Modul an (Rx/Tx, Audio, Logic, Kennung bleiben unberührt) und sichert vorher alles.
+> **Du brauchst nur:** einen laufenden SvxLink-Repeater, dein **Rufzeichen** und die üblichen
+> Bau-Werkzeuge (`g++`, `python3` — meist schon da). Der Installer fasst nur das Modul an (Rx/Tx,
+> Audio, Logic, Kennung bleiben unberührt) und sichert vorher alles.
 
 Alles Weitere unten ist Nachschlagewerk: Optionen, mehrere Netze, Technik.
 
@@ -42,9 +47,9 @@ Alles Weitere unten ist Nachschlagewerk: Optionen, mehrere Netze, Technik.
 ## Die Idee: FreeTetra
 
 [**freetetra.de**](https://freetetra.de) ist ein **freier, offener BREW-Server**, der einzelne
-**TETRA-BlueStations** und **FM-Repeater** miteinander vernetzt. Wer eine **RadioID** hat, kann
-connecten — kein Account, keine Anmeldung. So entsteht ein gemeinsames Amateurfunk-TETRA-Netz,
-in dem sich FM- und TETRA-Leute treffen.
+**TETRA-BlueStations** und **FM-Repeater** miteinander vernetzt. Verbinden kann sich jeder mit
+gültigem Rufzeichen (FM-Repeater) bzw. RadioID (TETRA-Stationen) — kein Account, keine Anmeldung.
+So entsteht ein gemeinsames Amateurfunk-TETRA-Netz, in dem sich FM- und TETRA-Leute treffen.
 
 - **FM-Repeater** kommen über dieses Modul rein.
 - **TETRA-BlueStations** sprechen BREW von Haus aus.
@@ -86,14 +91,14 @@ einen **dauerhaft vernetzten** FM-Einstieg will (wie eine BlueStation), setzt `A
 ## Die FreeTetra-Config im Detail
 
 `install.sh` kopiert dir diese Vorlage schon nach `svxlink.d/ModuleTetraBrew.conf` — du trägst nur
-deine RadioID ein. So sieht sie aus, mit Erklärungen:
+dein Rufzeichen ein. So sieht sie aus, mit Erklärungen:
 
 ```ini
 [ModuleTetraBrew]
 NAME=TetraBrew
 ID=5
 TIMEOUT=10800
-SRC_ISSI=<deine RadioID, z.B. DEINE_RADIOID>
+CALL=DO0XXX           ; dein Rufzeichen -> feste ISSI + Login-Name
 DEFAULT_TG=1
 BREW_SERVERS=FreeTetra
 
@@ -101,12 +106,16 @@ BREW_SERVERS=FreeTetra
 HOST=127.0.0.1        ; lokaler TLS-Proxy (install.sh richtet ihn ein)
 PORT=18443
 HOST_HEADER=freetetra.de
-USER=<deine RadioID>
+;USER=262102          ; optionaler Login-Override (Default: CALL); für eigene DMR-RadioID
 PASSWORD=freetetra    ; öffentliches Community-Passwort
 REALM=brew
 GSSI_MIN=1
 GSSI_MAX=16777215     ; nur ein Server -> ganzer Bereich (Aufteilung nur beim Splitten nötig)
 ```
+
+Aus `CALL` wird eine feste ISSI im FreeTetra-FM-Block abgeleitet (deutsche Repeater-Rufzeichen
+kollisionsfrei). Wer stattdessen eine eigene DMR-RadioID nutzen will, setzt `SRC_ISSI=<RadioID>`
+(global oder pro Endpunkt) — z.B. für einen Brandmeister-Endpunkt.
 
 ## Was `install.sh` automatisch macht
 
@@ -117,7 +126,7 @@ Damit du weißt, was da passiert (musst du nicht selbst tun):
 - baut den ACELP-Codec (`libtetra-codec`) und das Modul **gegen dein installiertes SvxLink**
   (versions-gebunden → lokal kompiliert, passt exakt — auch bei alten Versionen),
 - zeigt eine **Vorschau + Haftungshinweis** und fragt dich um Bestätigung,
-- installiert `.so` / `.conf` / `.tcl` / Sounds, füllt deine **RadioID** ein, richtet den
+- installiert `.so` / `.conf` / `.tcl` / Sounds, füllt dein **Rufzeichen** ein, richtet den
   TLS-Proxy ein und trägt **`MODULES=…,ModuleTetraBrew`** selbst ein (mit Backup),
 - **testet** den Neustart und **rollt bei jedem Fehler automatisch zurück** → dein Relais läuft
   wieder wie vorher. Dazu `--check` (Dry-Run), `--status` (Doctor), `--uninstall`.
@@ -130,9 +139,10 @@ Damit du weißt, was da passiert (musst du nicht selbst tun):
 
 | Key | Zweck |
 |---|---|
+| `CALL` | Rufzeichen des Repeaters → daraus feste, diallbare ISSI + Login-Name |
 | `TIMEOUT` | Inaktivitäts-Auto-Release (Sek), `0` = nie |
 | `DEFAULT_TG` | Talkgroup beim Aktivieren |
-| `SRC_ISSI` | Standard-ISSI/RadioID des Relais (pro Server überschreibbar) |
+| `SRC_ISSI` | Optionaler ISSI-Override (eigene DMR-RadioID) statt der aus `CALL` abgeleiteten; pro Server überschreibbar |
 | `BREW_SERVERS` | Liste der Endpunkte (Namen frei), z.B. `FreeTetra,Weiteres` |
 | `MAX_TX_TIME` | max. FM→TETRA-Durchgang (Sek), `0` = aus |
 | `STATUS_INTERVAL` | periodische „verbunden mit"-Ansage (Sek), `0` = aus (bzw. an CW-Kennung koppeln) |
@@ -144,8 +154,8 @@ Damit du weißt, was da passiert (musst du nicht selbst tun):
 | Key | Zweck |
 |---|---|
 | `HOST` `PORT` `HOST_HEADER` | Verbindung (direkt oder über lokalen TLS-Proxy) |
-| `USER` `PASSWORD` `REALM` | Digest-Auth (RadioID + Passwort) |
-| `SRC_ISSI` | ISSI-Override für dieses Netz |
+| `USER` `PASSWORD` `REALM` | Digest-Auth (Login-Name + Passwort). `USER` optional, Default = globales `CALL` |
+| `SRC_ISSI` | ISSI-Override für dieses Netz (z.B. Brandmeister-ID) statt der aus `CALL` abgeleiteten |
 | `GSSI_MIN` `GSSI_MAX` | **Routing:** welcher Endpunkt kriegt welche Talkgroup |
 | `GSSI_ALLOW` | **Policy:** nur diese TGs wählbar (leer = ganzer Bereich) — Troll-Bremse |
 | `RX_GAIN` | Lautstärke TETRA→FM für dieses Netz |

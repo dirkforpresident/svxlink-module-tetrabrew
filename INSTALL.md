@@ -14,8 +14,11 @@ eine saubere Installation möglich wäre — **ohne** etwas am System zu ändern
 
 ## Installieren
 ```
-sudo ./install.sh --radioid <DEINE-RADIOID>
+sudo ./install.sh --call <DEIN-RUFZEICHEN>
 ```
+Aus dem Rufzeichen wird automatisch eine feste, diallbare ISSI erzeugt (die Nummer,
+über die dich die TETRA-Seite erreicht) und als Login-Name genutzt. Wer eine eigene
+DMR-RadioID nutzen will: zusätzlich `--issi <RadioID>`.
 Ablauf:
 1. **Pre-Flight-Checks** — SvxLink, Version, Header, Build-Tools, Schreibrechte.
    Fehlt etwas → klare Meldung + Fix-Befehl, **nichts wird geändert.**
@@ -48,7 +51,9 @@ ModuleTetraBrew aus `MODULES` und startet svxlink neu.
 | `--check` | nur prüfen + probeweise bauen (ändert nichts) |
 | `--status` | Zustand anzeigen |
 | `--uninstall` | sauber entfernen |
-| `--radioid N` | RadioID/ISSI (sonst Abfrage) |
+| `--call RUFZEICHEN` | Rufzeichen → feste ISSI + Login (sonst Abfrage) |
+| `--issi N` | optionaler ISSI-Override (eigene DMR-RadioID) |
+| `--radioid N` | Alias für `--issi` |
 | `--ident-hook` | optionalen CW-Status-Hook mitinstallieren (Default: aus) |
 | `--yes` / `-y` | keine Rückfragen (Automatik) |
 

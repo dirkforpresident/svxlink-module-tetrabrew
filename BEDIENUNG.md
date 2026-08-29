@@ -61,8 +61,9 @@ Deine SDS wird quittiert (kein „message failed").
 
 | Schlüssel | Bedeutung |
 |---|---|
+| `CALL` | Rufzeichen des Repeaters → daraus feste, diallbare ISSI + Login-Name |
 | `DEFAULT_TG` | Heimat-TG beim Aktivieren |
 | `STANDBY=1` | Dauerhaft eingebucht ohne TG (Verzeichnis + SDS) |
 | `TG_IDLE_RESET` | Sekunden Ruhe auf Fremd-TG → zurück auf Default-TG (0 = aus) |
 | `MAX_TX_TIME` / `RX_MAX_TIME` | Max. Durchgang FM→TETRA / TETRA→FM (Sek) |
-| `SRC_ISSI` | RadioID des Repeaters (= Ziel-ISSI für SDS) |
+| `SRC_ISSI` | Optionaler ISSI-Override (eigene DMR-RadioID; pro Server setzbar). Das ist auch die Ziel-ISSI für SDS an den Repeater. |

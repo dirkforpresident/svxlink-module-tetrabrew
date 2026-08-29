@@ -50,6 +50,55 @@ namespace {
     }
     return out;
   }
+
+  // Standard-CRC-32 (IEEE, wie Python zlib.crc32) — nur fuer den Nicht-DE-Fallback.
+  uint32_t crc32_str(const string& s)
+  {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (unsigned char ch : s)
+    {
+      crc ^= ch;
+      for (int k = 0; k < 8; ++k)
+        crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320u : (crc >> 1);
+    }
+    return crc ^ 0xFFFFFFFFu;
+  }
+
+  // Rufzeichen -> feste, diallbare FreeTetra-FM-ISSI (muss 1:1 zu
+  // server-brew/tools/call2issi.py passen — Test-Vektoren dort).
+  // Deutsche Repeater-Calls (D[A-Z]0[A-Z]{2,3}) werden kollisionsfrei
+  // strukturell kodiert, alles andere per crc32 in den Fallback-Unterblock.
+  uint32_t call2issi(const string& raw)
+  {
+    const uint32_t BLOCK_BASE = 10000000u, FALLBACK_BASE = 15200000u, FALLBACK_SPAN = 1500000u;
+    string c;
+    for (char ch : raw)
+    {
+      if (ch == '/' || ch == '-') break;          // SSID/Zusatz abschneiden
+      if (isspace((unsigned char)ch)) continue;
+      c += (char)toupper((unsigned char)ch);
+    }
+    bool german = (c.size() == 5 || c.size() == 6) && c[0] == 'D'
+                  && c[1] >= 'A' && c[1] <= 'Z' && c[2] == '0';
+    if (german)
+      for (size_t i = 3; i < c.size(); ++i)
+        if (!(c[i] >= 'A' && c[i] <= 'Z')) german = false;
+    if (german)
+    {
+      int letter2 = c[1] - 'A';
+      int digit   = c[2] - '0';                    // immer 0 bei Repeatern
+      string suffix = c.substr(3);                  // 2-3 Buchstaben
+      uint32_t scode = 0;
+      for (int i = 0; i < 3; ++i)                    // 3 Slots base-27: leer=0, A=1..Z=26
+      {
+        int v = (i < (int)suffix.size()) ? (suffix[i] - 'A' + 1) : 0;
+        scode = scode * 27 + v;
+      }
+      uint32_t idx = (uint32_t)(letter2 * 10 + digit) * 19683u + scode;
+      return BLOCK_BASE + idx;
+    }
+    return FALLBACK_BASE + (crc32_str(c) % FALLBACK_SPAN);
+  }
 }
 
 
@@ -84,8 +133,16 @@ bool ModuleTetraBrew::initialize(void)
   }
 
   // --- globale Config ---
+  cfg().getValue(cfgName(), "CALL", m_call);
   cfg().getValue(cfgName(), "DEFAULT_TG", m_default_tg);
   cfg().getValue(cfgName(), "SRC_ISSI", m_src_issi);
+  // Rufzeichen gesetzt und keine ISSI erzwungen -> feste ISSI aus dem Call ableiten.
+  if (m_src_issi == 0 && !m_call.empty())
+  {
+    m_src_issi = call2issi(m_call);
+    cout << "\t  CALL=" << m_call << " -> ISSI " << m_src_issi
+         << " (FreeTetra-FM-Block)\n";
+  }
   cfg().getValue(cfgName(), "MAX_TX_TIME", m_max_tx_time);
   cfg().getValue(cfgName(), "RX_MAX_TIME", m_rx_max_time);
   cfg().getValue(cfgName(), "RX_JITTER_MS", m_rx_jitter_ms);
@@ -215,7 +272,7 @@ bool ModuleTetraBrew::loadEndpoint(const string& name)
   Endpoint ep;
   ep.name = name;
 
-  string host, host_header, user, pass, realm = "brew", allow_str;
+  string host, host_header, user = m_call, pass, realm = "brew", allow_str;
   int port = 8443;
   uint32_t src_issi = m_src_issi;   // globaler Default, überschreibbar
   double rx_gain = 4.0;
@@ -235,7 +292,7 @@ bool ModuleTetraBrew::loadEndpoint(const string& name)
 
   if (host.empty() || user.empty())
   {
-    cerr << "*** ERROR: [" << sec << "] HOST und USER müssen gesetzt sein.\n";
+    cerr << "*** ERROR: [" << sec << "] HOST fehlt, oder weder globales CALL noch USER gesetzt.\n";
     return false;
   }
   if (ep.gssi_max == 0) ep.gssi_max = 16777215;   // Default: ganzer 24-Bit-Bereich

@@ -9,7 +9,9 @@
 #           --status     Zustand anzeigen (installiert? geladen? Version?)
 #           --uninstall  sauber entfernen (Modul raus, Original wiederhergestellt)
 #
-# Optionen: --radioid N  RadioID/ISSI (sonst Abfrage)
+# Optionen: --call RUFZEICHEN  dein Rufzeichen -> feste ISSI + Login (sonst Abfrage)
+#           --issi N       optionaler ISSI-Override (eigene DMR-RadioID)
+#           --radioid N    Alias fuer --issi (RadioID als ISSI-Override)
 #           --ident-hook  optionalen CW-Status-Hook mitinstallieren (Default: aus)
 #           --yes|-y      keine Rueckfragen (Automatik-Modus)
 #
@@ -34,10 +36,13 @@ MANIFEST="$STATE_DIR/manifest"
 CONFBAK="$STATE_DIR/svxlink.conf.bak"
 
 # ---------- Argumente ----------
-MODE=install; RADIOID=""; IDENT_HOOK=0; ASSUME_YES=0
+MODE=install; CALL=""; ISSI=""; IDENT_HOOK=0; ASSUME_YES=0
 while [ $# -gt 0 ]; do case "$1" in
   --check) MODE=check ;;  --status) MODE=status ;;  --uninstall) MODE=uninstall ;;
-  --radioid) RADIOID="${2:-}"; shift ;;  --ident-hook) IDENT_HOOK=1 ;;
+  --call) CALL="${2:-}"; shift ;;
+  --issi) ISSI="${2:-}"; shift ;;
+  --radioid) ISSI="${2:-}"; shift ;;   # Alias: RadioID als ISSI-Override
+  --ident-hook) IDENT_HOOK=1 ;;
   --yes|-y) ASSUME_YES=1 ;;
   -h|--help) sed -n '4,20p' "$0"; exit 0 ;;
   *) die "Unbekannte Option: $1 (--help fuer Hilfe)";;
@@ -87,7 +92,7 @@ preflight(){
 # ---------- Bauen (in HERE; installiert noch nicht) ----------
 build(){
   [ -n "${VER:-}" ] || VER="$(detect_version)"
-  if [ -z "$VER" ]; then [ "$ASSUME_YES" = 1 ] && die "SvxLink-Version unbekannt (--radioid/--yes: bitte Version sicherstellen)"; read -rp "SvxLink-Version (z.B. 1.10.1): " VER; fi
+  if [ -z "$VER" ]; then [ "$ASSUME_YES" = 1 ] && die "SvxLink-Version unbekannt (bei --yes bitte Version vorab sicherstellen)"; read -rp "SvxLink-Version (z.B. 1.10.1): " VER; fi
   [ -n "$VER" ] || die "Keine SvxLink-Version."
   say "Baue ACELP-Codec + Modul gegen SvxLink $VER"
   local CD="${TETRA_CODEC_DIR:-$HERE/tetra-codec}"
@@ -134,8 +139,15 @@ do_install(){
   detect_paths
   preflight || die "Pre-Flight fehlgeschlagen — NICHTS geaendert. Fix die Punkte oben, dann erneut."
   build
-  if [ -z "$RADIOID" ]; then [ "$ASSUME_YES" = 1 ] && die "RadioID fehlt (--radioid N)"; read -rp "Deine RadioID / ISSI (nur Ziffern): " RADIOID; fi
-  [[ "$RADIOID" =~ ^[0-9]+$ ]] || die "RadioID muss numerisch sein: $RADIOID"
+  if [ -z "$CALL" ]; then [ "$ASSUME_YES" = 1 ] && die "Rufzeichen fehlt (--call RUFZEICHEN)"; read -rp "Dein Rufzeichen (z.B. DO0RAM): " CALL; fi
+  CALL=$(printf '%s' "$CALL" | tr 'a-z' 'A-Z')
+  [[ "$CALL" =~ ^[A-Z0-9]{3,10}$ ]] || die "Rufzeichen ungueltig (Buchstaben/Ziffern, 3-10 Zeichen): $CALL"
+  if [ -n "$ISSI" ]; then [[ "$ISSI" =~ ^[0-9]+$ ]] || die "ISSI/RadioID muss numerisch sein: $ISSI"; fi
+  # ISSI zur Info aus dem Call ableiten (falls kein Override und Helfer vorhanden)
+  DERIVED=""
+  if [ -z "$ISSI" ] && command -v python3 >/dev/null 2>&1 && [ -f "$HERE/tools/call2issi.py" ]; then
+    DERIVED=$(python3 "$HERE/tools/call2issi.py" "$CALL" 2>/dev/null | awk '{print $3}')
+  fi
 
   # ---- Vorschau + Bestaetigung (VOR jeder System-Aenderung) ----
   echo
@@ -144,8 +156,11 @@ do_install(){
   echo "   + Modul   -> $SO_DEST"
   echo "   + Codec   -> /usr/local/lib/libtetra-codec.so"
   echo "   + TCL/Sounds -> /usr/share/svxlink/events.d/ + sounds/"
+  if [ -n "$ISSI" ]; then CFGINFO="CALL $CALL, ISSI-Override $ISSI"
+  elif [ -n "$DERIVED" ]; then CFGINFO="CALL $CALL -> ISSI $DERIVED"
+  else CFGINFO="CALL $CALL"; fi
   [ -f "$CONF_DEST" ] && echo "   . Config  -> $CONF_DEST (existiert -> bleibt unangetastet)" \
-                      || echo "   + Config  -> $CONF_DEST (RadioID $RADIOID)"
+                      || echo "   + Config  -> $CONF_DEST ($CFGINFO)"
   grep -qE '^MODULES=.*\bModuleTetraBrew\b' "$CONF" && echo "   . MODULES -> ModuleTetraBrew schon eingetragen" \
                       || echo "   ~ MODULES -> ModuleTetraBrew wird angehaengt (Backup: $CONFBAK)"
   [ "$IDENT_HOOK" = 1 ] && echo "   + optionaler CW-Kennungs-Hook"
@@ -195,8 +210,10 @@ UNIT
 
   if [ ! -f "$CONF_DEST" ]; then
     install -d "$CFG_DIR"
-    sed -e "s/^USER=.*/USER=$RADIOID/" -e "s/^SRC_ISSI=.*/SRC_ISSI=$RADIOID/" "$HERE/examples/freetetra-only.conf" > "$CONF_DEST"
-    chmod 640 "$CONF_DEST"; record "$CONF_DEST"; ok "Config angelegt: $CONF_DEST (RadioID $RADIOID)"
+    sed_args=(-e "s/^CALL=.*/CALL=$CALL/")
+    [ -n "$ISSI" ] && sed_args+=(-e "s/^;*SRC_ISSI=.*/SRC_ISSI=$ISSI/")
+    sed "${sed_args[@]}" "$HERE/examples/freetetra-only.conf" > "$CONF_DEST"
+    chmod 640 "$CONF_DEST"; record "$CONF_DEST"; ok "Config angelegt: $CONF_DEST ($CFGINFO)"
   else warn "Config existiert schon -> unangetastet ($CONF_DEST)"; fi
 
   if grep -qE '^MODULES=.*\bModuleTetraBrew\b' "$CONF"; then ok "MODULES enthaelt ModuleTetraBrew bereits";

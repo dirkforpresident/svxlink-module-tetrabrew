@@ -4,6 +4,18 @@
 (Server, DO0RAM-Dashboard). Neue Funktionen und Verbesserungen ausführlich,
 Fehlerbehebungen nur kurz.
 
+## 2026-08-29
+
+### Neue Funktionen
+- **Rufzeichen statt RadioID.** In der Config (bzw. Installer) trägt man nur noch sein
+  **Rufzeichen** ein (`CALL=DO0RAM`). Daraus wird automatisch eine feste, gleichbleibende
+  **ISSI** erzeugt — die Nummer, über die der virtuelle FM-Teilnehmer von der TETRA-Seite
+  erreichbar ist. Deutsche Repeater-Rufzeichen (`D_0___`) werden dabei kollisionsfrei in
+  einen reservierten FM-ISSI-Block kodiert; alles andere per Hash-Fallback. Eine eigene
+  DMR-RadioID lässt sich weiter per `SRC_ISSI=` erzwingen (z.B. für einen
+  Brandmeister-Endpunkt). Installer: `--call RUFZEICHEN` (statt `--radioid`), optional
+  `--issi <RadioID>`. Die abgeleitete ISSI steht im Verzeichnis.
+
 ## 2026-08-26
 
 ### Neue Funktionen
