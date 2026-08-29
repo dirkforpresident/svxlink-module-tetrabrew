@@ -2,3 +2,4 @@ tetra-codec/
 *.so
 test_brew
 /config.json
+/ModuleTetraBrew.conf

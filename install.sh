@@ -44,7 +44,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --radioid) ISSI="${2:-}"; shift ;;   # Alias: RadioID als ISSI-Override
   --ident-hook) IDENT_HOOK=1 ;;
   --yes|-y) ASSUME_YES=1 ;;
-  -h|--help) sed -n '4,20p' "$0"; exit 0 ;;
+  -h|--help) sed -n '4,21p' "$0"; exit 0 ;;
   *) die "Unbekannte Option: $1 (--help fuer Hilfe)";;
 esac; shift; done
 
@@ -139,14 +139,18 @@ do_install(){
   detect_paths
   preflight || die "Pre-Flight fehlgeschlagen — NICHTS geaendert. Fix die Punkte oben, dann erneut."
   build
-  if [ -z "$CALL" ]; then [ "$ASSUME_YES" = 1 ] && die "Rufzeichen fehlt (--call RUFZEICHEN)"; read -rp "Dein Rufzeichen (z.B. DO0RAM): " CALL; fi
-  CALL=$(printf '%s' "$CALL" | tr 'a-z' 'A-Z')
-  [[ "$CALL" =~ ^[A-Z0-9]{3,10}$ ]] || die "Rufzeichen ungueltig (Buchstaben/Ziffern, 3-10 Zeichen): $CALL"
-  if [ -n "$ISSI" ]; then [[ "$ISSI" =~ ^[0-9]+$ ]] || die "ISSI/RadioID muss numerisch sein: $ISSI"; fi
-  # ISSI zur Info aus dem Call ableiten (falls kein Override und Helfer vorhanden)
+  # Rufzeichen/ISSI nur noetig, wenn eine NEUE Config geschrieben wird
+  # (Update/Reinstall bei vorhandener Config -> nur .so tauschen, kein Call noetig).
   DERIVED=""
-  if [ -z "$ISSI" ] && command -v python3 >/dev/null 2>&1 && [ -f "$HERE/tools/call2issi.py" ]; then
-    DERIVED=$(python3 "$HERE/tools/call2issi.py" "$CALL" 2>/dev/null | awk '{print $3}')
+  if [ ! -f "$CONF_DEST" ]; then
+    if [ -z "$CALL" ]; then [ "$ASSUME_YES" = 1 ] && die "Rufzeichen fehlt (--call RUFZEICHEN)"; read -rp "Dein Rufzeichen (z.B. DO0RAM): " CALL; fi
+    CALL=$(printf '%s' "$CALL" | tr 'a-z' 'A-Z')
+    [[ "$CALL" =~ ^[A-Z0-9]{3,10}$ ]] || die "Rufzeichen ungueltig (Buchstaben/Ziffern, 3-10 Zeichen): $CALL"
+    if [ -n "$ISSI" ]; then [[ "$ISSI" =~ ^[0-9]+$ ]] || die "ISSI/RadioID muss numerisch sein: $ISSI"; fi
+    # ISSI zur Info aus dem Call ableiten (falls kein Override und Helfer vorhanden)
+    if [ -z "$ISSI" ] && command -v python3 >/dev/null 2>&1 && [ -f "$HERE/tools/call2issi.py" ]; then
+      DERIVED=$(python3 "$HERE/tools/call2issi.py" "$CALL" 2>/dev/null | awk '{print $3}') || true
+    fi
   fi
 
   # ---- Vorschau + Bestaetigung (VOR jeder System-Aenderung) ----
