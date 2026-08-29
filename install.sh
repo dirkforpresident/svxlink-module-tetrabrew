@@ -1,96 +1,183 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ###############################################################################
-# ModuleTetraBrew — Installer (baut auf dem Ziel gegen dein installiertes SvxLink)
+# ModuleTetraBrew — sicherer Installer
 #
-#   sudo ./install.sh
+#   sudo ./install.sh [BEFEHL] [OPTIONEN]
 #
-# Baut libtetra-codec + das Modul passend zu deiner SvxLink-Version, installiert
-# .so / .conf / .tcl / Sounds, richtet den TLS-Proxy (systemd) + den CW-Kennungs-
-# Hook ein und sagt dir am Ende, was noch in die svxlink.conf muss.
+# Befehle:  (ohne)       installieren  (Pre-Flight -> bauen -> testen -> Auto-Rollback)
+#           --check      nur pruefen + probeweise bauen; aendert NICHTS am System
+#           --status     Zustand anzeigen (installiert? geladen? Version?)
+#           --uninstall  sauber entfernen (Modul raus, Original wiederhergestellt)
+#
+# Optionen: --radioid N  RadioID/ISSI (sonst Abfrage)
+#           --ident-hook  optionalen CW-Status-Hook mitinstallieren (Default: aus)
+#           --yes|-y      keine Rueckfragen (Automatik-Modus)
+#
+# Prinzip: kompiliert AUF dem Ziel gegen dessen SvxLink -> version-universal +
+# ABI-sicher. Transaktional mit Manifest + Auto-Rollback + Test-Start. Fasst nur
+# das Modul an (Rx/Tx/Audio/Logic/Kennung bleiben unberuehrt). Kann das laufende
+# Relais nicht dauerhaft stoeren: bei jedem Fehler -> exakt vorheriger Zustand.
 ###############################################################################
-set -e
-say()  { printf "\033[1;36m==>\033[0m %s\n" "$*"; }
-warn() { printf "\033[1;33m!!\033[0m %s\n" "$*"; }
-die()  { printf "\033[1;31mFEHLER:\033[0m %s\n" "$*" >&2; exit 1; }
+set -euo pipefail
 
-[ "$(id -u)" = "0" ] || die "Bitte mit sudo/als root laufen lassen."
+C_G=$'\033[1;36m'; C_Y=$'\033[1;33m'; C_R=$'\033[1;31m'; C_N=$'\033[0m'
+say(){  printf "%s==>%s %s\n" "$C_G" "$C_N" "$*"; }
+ok(){   printf "   %s[ok]%s %s\n" "$C_G" "$C_N" "$*"; }
+warn(){ printf "%s !!%s %s\n" "$C_Y" "$C_N" "$*"; }
+err(){  printf "%sFEHLER:%s %s\n" "$C_R" "$C_N" "$*" >&2; }
+die(){  err "$*"; exit 1; }
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
-cd "$HERE"
-
-# --- 1. Werkzeuge prüfen ---
-say "Prüfe Voraussetzungen..."
-for t in g++ gcc pkg-config python3; do command -v "$t" >/dev/null || die "'$t' fehlt (bitte installieren)."; done
-[ -d /usr/include/svxlink ] || die "SvxLink-Header /usr/include/svxlink nicht gefunden — läuft hier SvxLink?"
-pkg-config --exists sigc++-2.0 || die "sigc++-2.0 fehlt."
-
-# --- 2. SvxLink-Version + Pfade ermitteln ---
 CONF="${SVXCONF:-/etc/svxlink/svxlink.conf}"
-[ -f "$CONF" ] || die "svxlink.conf nicht gefunden ($CONF). Setze SVXCONF=<pfad> und erneut."
-MODULE_PATH="$(grep -E '^MODULE_PATH=' "$CONF" | head -1 | cut -d= -f2)"
-CFG_DIR_REL="$(grep -E '^CFG_DIR=' "$CONF" | head -1 | cut -d= -f2)"
-: "${MODULE_PATH:=/usr/lib/svxlink}"
-CFG_DIR="/etc/svxlink/${CFG_DIR_REL:-svxlink.d}"
-SOUND_BASE="/usr/share/svxlink/sounds"
-EVENTS_LOCAL="/usr/share/svxlink/events.d/local"
+STATE_DIR=/var/lib/tetrabrew
+MANIFEST="$STATE_DIR/manifest"
+CONFBAK="$STATE_DIR/svxlink.conf.bak"
 
-# Version aus laufendem Log oder --version ziehen; sonst fragen.
-VER="$(svxlink --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-[ -z "$VER" ] && VER="$(grep -hoE 'SvxLink v[0-9]+\.[0-9]+\.[0-9]+' /var/log/svxlink* 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || true)"
-if [ -z "$VER" ]; then
-  read -rp "SvxLink-Version konnte nicht erkannt werden. Bitte eingeben (z.B. 1.7.0): " VER
-fi
-[ -n "$VER" ] || die "Keine SvxLink-Version."
-say "SvxLink-Version: $VER · MODULE_PATH: $MODULE_PATH · CFG_DIR: $CFG_DIR"
+# ---------- Argumente ----------
+MODE=install; RADIOID=""; IDENT_HOOK=0; ASSUME_YES=0
+while [ $# -gt 0 ]; do case "$1" in
+  --check) MODE=check ;;  --status) MODE=status ;;  --uninstall) MODE=uninstall ;;
+  --radioid) RADIOID="${2:-}"; shift ;;  --ident-hook) IDENT_HOOK=1 ;;
+  --yes|-y) ASSUME_YES=1 ;;
+  -h|--help) sed -n '4,20p' "$0"; exit 0 ;;
+  *) die "Unbekannte Option: $1 (--help fuer Hilfe)";;
+esac; shift; done
 
-# --- 3. libtetra-codec bauen ---
-# ACELP-Codec = ETSI-TETRA-Referenz (EN 300 395-2). Wird vom Upstream geholt
-# (NICHT in diesem Repo mitgeliefert — ETSI-Lizenz). Override: TETRA_CODEC_DIR=<pfad>.
-CODEC_DIR="${TETRA_CODEC_DIR:-tetra-codec}"
-if [ ! -d "$CODEC_DIR" ]; then
-  command -v git >/dev/null || die "git fehlt (für den Codec-Download)."
-  say "Hole ACELP-Codec (github.com/outerplane/tetra-codec)..."
-  git clone --depth 1 https://github.com/outerplane/tetra-codec.git "$CODEC_DIR" \
-    || die "Codec-Clone fehlgeschlagen. Manuell holen + TETRA_CODEC_DIR=<pfad> setzen."
-fi
-say "Baue libtetra-codec..."
-gcc -shared -fPIC -O2 -std=c11 -I"$CODEC_DIR/include" -I"$CODEC_DIR/source" \
-    -o /usr/local/lib/libtetra-codec.so \
-    "$CODEC_DIR/source/tetra-codec.c" "$CODEC_DIR/source/tetra-codec-impl.c"
-install -m644 "$CODEC_DIR/include/tetra-codec.h" /usr/local/include/
-ldconfig
-say "libtetra-codec installiert."
+# ---------- Helfer ----------
+detect_paths(){
+  MODULE_PATH="$(grep -E '^MODULE_PATH=' "$CONF" 2>/dev/null | head -1 | cut -d= -f2 || true)"
+  local rel;  rel="$(grep -E '^CFG_DIR=' "$CONF" 2>/dev/null | head -1 | cut -d= -f2 || true)"
+  : "${MODULE_PATH:=/usr/lib/svxlink}"
+  CFG_DIR="/etc/svxlink/${rel:-svxlink.d}"
+  SO_DEST="$MODULE_PATH/ModuleTetraBrew.so"
+  CONF_DEST="$CFG_DIR/ModuleTetraBrew.conf"
+  TCL_DEST="/usr/share/svxlink/events.d/TetraBrew.tcl"
+}
+detect_version(){
+  local v; v="$(svxlink --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  [ -z "$v" ] && v="$(grep -rhoE 'SvxLink v?[0-9]+\.[0-9]+\.[0-9]+' /var/log/svxlink* 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || true)"
+  printf '%s' "$v"
+}
+svx_active(){ systemctl is-active --quiet svxlink 2>/dev/null; }
+svx_log(){ { journalctl -u svxlink --no-pager -n 80 2>/dev/null || true; tail -80 /var/log/svxlink 2>/dev/null || true; } | tail -160 || true; }
+pkg_hint(){ if command -v apt-get >/dev/null; then echo "sudo apt-get install $*"
+  elif command -v dnf >/dev/null; then echo "sudo dnf install $*"
+  elif command -v pacman >/dev/null; then echo "sudo pacman -S $*"; else echo "installiere: $*"; fi; }
 
-# --- 4. Versions-Header erzeugen + Modul bauen ---
-say "Baue ModuleTetraBrew gegen SvxLink $VER..."
-mkdir -p svxheaders/version
-printf '#ifndef SVXLINK_VERSION_INCLUDED\n#define SVXLINK_VERSION_INCLUDED\n#define SVXLINK_APP_VERSION "%s"\n#endif\n' "$VER" > svxheaders/version/SVXLINK.h
-[ -f svxheaders/version/MODULE_TETRA_BREW.h ] || \
-  printf '#define MODULE_TETRA_BREW_VERSION "0.2.0"\n' > svxheaders/version/MODULE_TETRA_BREW.h
-SR="$(grep -hoE 'INTERNAL_SAMPLE_RATE[= ]+[0-9]+' /usr/include/svxlink/*.h 2>/dev/null | grep -oE '[0-9]+' | head -1)"
-: "${SR:=16000}"
-g++ -shared -fPIC -std=c++11 -O2 -o ModuleTetraBrew.so \
-    ModuleTetraBrew.cpp TetraBrewConnection.cpp \
-    -I/usr/include/svxlink -Isvxheaders -I/usr/local/include \
-    -DINTERNAL_SAMPLE_RATE="${SR}" $(pkg-config --cflags sigc++-2.0) \
-    -L/usr/local/lib -ltetra-codec
-file ModuleTetraBrew.so | grep -q ELF || die "Build fehlgeschlagen."
-install -m644 ModuleTetraBrew.so "$MODULE_PATH/"
-say "Modul installiert -> $MODULE_PATH/ModuleTetraBrew.so"
+# ---------- Pre-Flight (aendert NICHTS) ----------
+preflight(){
+  local fail=0
+  say "Pre-Flight-Checks (es wird noch NICHTS geaendert)"
+  command -v svxlink >/dev/null && ok "svxlink gefunden" || { err "svxlink nicht gefunden — laeuft hier ein SvxLink-Relais?"; fail=1; }
+  VER="$(detect_version)"
+  [ -n "$VER" ] && ok "SvxLink-Version: $VER" || warn "Version nicht auto-erkennbar (wird beim Bauen abgefragt)"
+  [ -f "$CONF" ] && ok "Config: $CONF" || { err "svxlink.conf fehlt ($CONF) — SVXCONF=<pfad> setzen"; fail=1; }
+  grep -qE '^MODULES=' "$CONF" 2>/dev/null && ok "MODULES-Zeile vorhanden" || { err "Keine MODULES= Zeile in $CONF"; fail=1; }
+  [ -d /usr/include/svxlink ] && ok "SvxLink-Header /usr/include/svxlink" || { err "SvxLink-Header fehlen  ->  $(pkg_hint svxlink-dev)"; fail=1; }
+  local miss=()
+  for t in g++ gcc pkg-config git; do command -v "$t" >/dev/null || miss+=("$t"); done
+  pkg-config --exists sigc++-2.0 2>/dev/null || miss+=("libsigc++-2.0-dev")
+  [ ${#miss[@]} -eq 0 ] && ok "Build-Werkzeuge komplett" || { err "Fehlt: ${miss[*]}  ->  $(pkg_hint build-essential ${miss[*]})"; fail=1; }
+  [ -d "$MODULE_PATH" ] && [ -w "$MODULE_PATH" ] && ok "MODULE_PATH schreibbar: $MODULE_PATH" || { err "MODULE_PATH nicht schreibbar: $MODULE_PATH"; fail=1; }
+  systemctl cat svxlink >/dev/null 2>&1 && ok "systemd-Unit svxlink" || warn "Kein systemd-svxlink — Auto-Test/Rollback eingeschraenkt"
+  svx_active && ok "svxlink laeuft (gesunder Ausgangspunkt)" || warn "svxlink laeuft gerade NICHT — bring erst dein Relais zum Laufen (sonst kann der Test-Start nicht sauber pruefen)"
+  return $fail
+}
 
-# --- 5. TCL, Sounds, Kennungs-Hook ---
-install -m644 TetraBrew.tcl /usr/share/svxlink/events.d/
-mkdir -p "$EVENTS_LOCAL" && install -m644 events.d.local/zz_tetrabrew_ident.tcl "$EVENTS_LOCAL/"
-for L in en_US de_DE; do
-  mkdir -p "$SOUND_BASE/$L/TetraBrew"
-  install -m644 sounds/TetraBrew/*.wav "$SOUND_BASE/$L/TetraBrew/" 2>/dev/null || true
-done
-say "TCL + Sounds + Kennungs-Hook installiert."
+# ---------- Bauen (in HERE; installiert noch nicht) ----------
+build(){
+  [ -n "${VER:-}" ] || VER="$(detect_version)"
+  if [ -z "$VER" ]; then [ "$ASSUME_YES" = 1 ] && die "SvxLink-Version unbekannt (--radioid/--yes: bitte Version sicherstellen)"; read -rp "SvxLink-Version (z.B. 1.10.1): " VER; fi
+  [ -n "$VER" ] || die "Keine SvxLink-Version."
+  say "Baue ACELP-Codec + Modul gegen SvxLink $VER"
+  local CD="${TETRA_CODEC_DIR:-$HERE/tetra-codec}"
+  [ -d "$CD" ] || git clone --depth 1 https://github.com/outerplane/tetra-codec.git "$CD" >/dev/null 2>&1 || die "ACELP-Codec-Download fehlgeschlagen (manuell holen + TETRA_CODEC_DIR=<pfad>)"
+  gcc -shared -fPIC -O2 -std=c11 -I"$CD/include" -I"$CD/source" -o "$HERE/libtetra-codec.so" \
+      "$CD/source/tetra-codec.c" "$CD/source/tetra-codec-impl.c" || die "Codec-Build fehlgeschlagen"
+  ok "libtetra-codec gebaut"
+  mkdir -p "$HERE/svxheaders/version"
+  printf '#ifndef SVXLINK_VERSION_INCLUDED\n#define SVXLINK_VERSION_INCLUDED\n#define SVXLINK_APP_VERSION "%s"\n#endif\n' "$VER" > "$HERE/svxheaders/version/SVXLINK.h"
+  [ -f "$HERE/svxheaders/version/MODULE_TETRA_BREW.h" ] || printf '#define MODULE_TETRA_BREW_VERSION "0.2.0"\n' > "$HERE/svxheaders/version/MODULE_TETRA_BREW.h"
+  local SR; SR="$(grep -rhoE 'INTERNAL_SAMPLE_RATE[= ]+[0-9]+' /usr/include/svxlink/*.h 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"; : "${SR:=16000}"
+  g++ -shared -fPIC -std=c++11 -O2 -o "$HERE/ModuleTetraBrew.so" \
+      "$HERE/ModuleTetraBrew.cpp" "$HERE/TetraBrewConnection.cpp" \
+      -I/usr/include/svxlink -I"$HERE/svxheaders" -I/usr/local/include \
+      -DINTERNAL_SAMPLE_RATE="$SR" $(pkg-config --cflags sigc++-2.0) \
+      -L"$HERE" -L/usr/local/lib -ltetra-codec || die "Modul-Build fehlgeschlagen"
+  file "$HERE/ModuleTetraBrew.so" | grep -q ELF || die "Modul-Build ergab kein ELF-Objekt"
+  ok "ModuleTetraBrew.so gebaut (INTERNAL_SAMPLE_RATE=$SR)"
+}
 
-# --- 6. TLS-Proxy (systemd) — nur nötig für TLS-Server (z.B. freetetra.de) ---
-install -m755 tools/tetrabrew-tls-proxy.py /opt/tetrabrew-tls-proxy.py 2>/dev/null || \
-  warn "tools/tetrabrew-tls-proxy.py fehlt — TLS-Proxy nicht installiert (nur für ws:// nötig)."
-if [ -f /opt/tetrabrew-tls-proxy.py ]; then
-  cat > /etc/systemd/system/tetrabrew-tls-freetetra.service <<UNIT
+# ---------- Rollback (via trap waehrend der Transaktion) ----------
+COMMITTED=0
+BACKUP_DIR="$STATE_DIR/backup"
+record(){ printf '%s\n' "$1" >> "$MANIFEST"; }
+# Datei platzieren: existierendes Ziel VORHER sichern (fuer sauberen Rollback), dann installieren.
+place(){ local src="$1" dest="$2" mode="${3:-644}"
+  if [ -e "$dest" ]; then install -d "$BACKUP_DIR$(dirname "$dest")"; cp -a "$dest" "$BACKUP_DIR$dest"; fi
+  install -Dm"$mode" "$src" "$dest"; record "$dest"; }
+rollback(){
+  [ "$COMMITTED" = 1 ] && return 0
+  warn "Rollback — stelle Originalzustand wieder her ..."
+  if [ -f "$MANIFEST" ]; then while IFS= read -r f; do [ -z "$f" ] && continue
+      if [ -e "$BACKUP_DIR$f" ]; then cp -a "$BACKUP_DIR$f" "$f"; else rm -f "$f"; fi
+    done < "$MANIFEST"; fi
+  [ -f "$CONFBAK" ] && cp -f "$CONFBAK" "$CONF"
+  rm -rf "$MANIFEST" "$BACKUP_DIR"
+  systemctl restart svxlink 2>/dev/null || true; sleep 3
+  svx_active && warn "Rollback fertig — Relais laeuft wieder wie vorher." \
+             || err "Rollback: svxlink kam nicht hoch! Backup liegt in $CONFBAK — bitte pruefen."
+}
+
+# ---------- Installieren ----------
+do_install(){
+  detect_paths
+  preflight || die "Pre-Flight fehlgeschlagen — NICHTS geaendert. Fix die Punkte oben, dann erneut."
+  build
+  if [ -z "$RADIOID" ]; then [ "$ASSUME_YES" = 1 ] && die "RadioID fehlt (--radioid N)"; read -rp "Deine RadioID / ISSI (nur Ziffern): " RADIOID; fi
+  [[ "$RADIOID" =~ ^[0-9]+$ ]] || die "RadioID muss numerisch sein: $RADIOID"
+
+  # ---- Vorschau + Bestaetigung (VOR jeder System-Aenderung) ----
+  echo
+  say "Vorschau — das wird gemacht (bis hierher NICHTS am System geaendert):"
+  echo "   SvxLink $VER   MODULE_PATH $MODULE_PATH   CFG_DIR $CFG_DIR"
+  echo "   + Modul   -> $SO_DEST"
+  echo "   + Codec   -> /usr/local/lib/libtetra-codec.so"
+  echo "   + TCL/Sounds -> /usr/share/svxlink/events.d/ + sounds/"
+  [ -f "$CONF_DEST" ] && echo "   . Config  -> $CONF_DEST (existiert -> bleibt unangetastet)" \
+                      || echo "   + Config  -> $CONF_DEST (RadioID $RADIOID)"
+  grep -qE '^MODULES=.*\bModuleTetraBrew\b' "$CONF" && echo "   . MODULES -> ModuleTetraBrew schon eingetragen" \
+                      || echo "   ~ MODULES -> ModuleTetraBrew wird angehaengt (Backup: $CONFBAK)"
+  [ "$IDENT_HOOK" = 1 ] && echo "   + optionaler CW-Kennungs-Hook"
+  echo "   danach: svxlink Test-Neustart + Verifikation. Bei JEDEM Fehler -> automatischer Rollback."
+  echo
+  warn "Einbau erfolgt auf EIGENE VERANTWORTUNG. Der Installer sichert alles (Backup:"
+  warn "$CONFBAK) und rollt bei Fehlern automatisch zurueck — eine 100%-Garantie gibt es"
+  warn "aber nie. Lieber selbst? -> Modul bauen + MODULES=...,ModuleTetraBrew von Hand"
+  warn "(siehe BEDIENUNG.md und examples/). Rueckgaengig jederzeit: --uninstall."
+  echo
+  if [ "$ASSUME_YES" != 1 ]; then
+    read -rp "Verstanden, auf eigene Verantwortung fortfahren? [j/N] " a
+    case "$a" in j|J|y|Y) ;; *) die "Abgebrochen — es wurde NICHTS geaendert.";; esac
+  fi
+
+  mkdir -p "$STATE_DIR"; : > "$MANIFEST"; cp -f "$CONF" "$CONFBAK"
+  trap rollback ERR INT TERM     # ab hier: jeder Fehler -> alles zurueck
+
+  say "Installiere Dateien ..."
+  place "$HERE/libtetra-codec.so" /usr/local/lib/libtetra-codec.so
+  [ -f "$HERE/tetra-codec/include/tetra-codec.h" ] && place "$HERE/tetra-codec/include/tetra-codec.h" /usr/local/include/tetra-codec.h
+  ldconfig || true
+  place "$HERE/ModuleTetraBrew.so" "$SO_DEST"
+  place "$HERE/TetraBrew.tcl" "$TCL_DEST"
+  for L in en_US de_DE; do for w in "$HERE"/sounds/TetraBrew/*.wav; do [ -e "$w" ] && place "$w" "/usr/share/svxlink/sounds/$L/TetraBrew/$(basename "$w")"; done; done
+  if [ "$IDENT_HOOK" = 1 ]; then place "$HERE/events.d.local/zz_tetrabrew_ident.tcl" /usr/share/svxlink/events.d/local/zz_tetrabrew_ident.tcl; fi
+
+  # TLS-Proxy: die Default-Config zeigt auf 127.0.0.1:18443 -> freetetra.de:443 (wss).
+  # Nur einrichten, wenn nicht schon vorhanden und das Tool im Repo liegt.
+  if [ -f "$HERE/tools/tetrabrew-tls-proxy.py" ] && [ ! -f /etc/systemd/system/tetrabrew-tls-freetetra.service ]; then
+    place "$HERE/tools/tetrabrew-tls-proxy.py" /opt/tetrabrew-tls-proxy.py 755
+    cat > /etc/systemd/system/tetrabrew-tls-freetetra.service <<'UNIT'
 [Unit]
 Description=ModuleTetraBrew TLS-Proxy (FreeTetra)
 After=network-online.target
@@ -101,30 +188,79 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 UNIT
-  systemctl daemon-reload
-  systemctl enable --now tetrabrew-tls-freetetra
-  say "TLS-Proxy 127.0.0.1:18443 -> freetetra.de:443 läuft."
-fi
+    record /etc/systemd/system/tetrabrew-tls-freetetra.service
+    systemctl daemon-reload; systemctl enable --now tetrabrew-tls-freetetra 2>/dev/null || true
+    ok "TLS-Proxy 127.0.0.1:18443 -> freetetra.de:443 eingerichtet"
+  fi
 
-# --- 7. Config-Vorlage ---
-DEST_CONF="$CFG_DIR/ModuleTetraBrew.conf"
-if [ ! -f "$DEST_CONF" ]; then
-  install -m644 examples/freetetra-only.conf "$DEST_CONF"
-  warn "Config-Vorlage kopiert -> $DEST_CONF  (USER=<deine RadioID> eintragen!)"
-else
-  say "Config existiert schon ($DEST_CONF) — bleibt unangetastet."
-fi
+  if [ ! -f "$CONF_DEST" ]; then
+    install -d "$CFG_DIR"
+    sed -e "s/^USER=.*/USER=$RADIOID/" -e "s/^SRC_ISSI=.*/SRC_ISSI=$RADIOID/" "$HERE/examples/freetetra-only.conf" > "$CONF_DEST"
+    chmod 640 "$CONF_DEST"; record "$CONF_DEST"; ok "Config angelegt: $CONF_DEST (RadioID $RADIOID)"
+  else warn "Config existiert schon -> unangetastet ($CONF_DEST)"; fi
 
-cat <<DONE
+  if grep -qE '^MODULES=.*\bModuleTetraBrew\b' "$CONF"; then ok "MODULES enthaelt ModuleTetraBrew bereits";
+  else sed -i -E 's/^(MODULES=[^#[:space:]]*)/\1,ModuleTetraBrew/' "$CONF"; ok "ModuleTetraBrew zu MODULES hinzugefuegt"; fi
 
-============================================================
-  FERTIG. Noch zwei Handgriffe:
+  say "Test: svxlink neu starten und pruefen ..."
+  systemctl restart svxlink 2>/dev/null || { rollback; die "svxlink-Neustart ging nicht — zurueckgerollt."; }
+  sleep 5
+  svx_active || { err "svxlink kam mit dem Modul NICHT hoch."; rollback; die "Abgebrochen — Relais laeuft wieder wie vorher."; }
+  if svx_log | grep -qiE 'Bailing out|Initialization failed for module ModuleTetraBrew'; then
+    err "Modul lud nicht sauber (siehe Log)."; rollback; die "Abgebrochen — Relais wiederhergestellt."; fi
+  svx_log | grep -qi 'Module TetraBrew' && ok "Modul geladen" || warn "Modul-Start nicht im Log gefunden (evtl. anderes Logziel) — svxlink laeuft aber."
 
-  1) In $DEST_CONF  ->  USER + SRC_ISSI = deine RadioID.
-  2) In $CONF, Logic-Sektion:  MODULES=...,ModuleTetraBrew
-  3) sudo systemctl restart svxlink
+  COMMITTED=1; trap - ERR INT TERM
+  echo; say "FERTIG. ModuleTetraBrew installiert und getestet."
+  echo "   Aktivieren:  auftasten + DTMF 5#     Status:  sudo $0 --status     Entfernen:  sudo $0 --uninstall"
+}
 
-  Dann: auftasten, 5# = an (FreeTetra TG 1). 73!
-  Beispiel-Configs siehe examples/.
-============================================================
-DONE
+# ---------- Deinstallieren ----------
+do_uninstall(){
+  detect_paths
+  say "Entferne ModuleTetraBrew ..."
+  # ModuleTetraBrew aus MODULES loesen (in beliebiger Position)
+  if grep -qE '^MODULES=.*ModuleTetraBrew' "$CONF" 2>/dev/null; then
+    cp -f "$CONF" "$STATE_DIR/svxlink.conf.preuninstall.$(date +%s 2>/dev/null || echo bak)" 2>/dev/null || true
+    sed -i -E 's/,?ModuleTetraBrew//g' "$CONF"; ok "aus MODULES entfernt"
+  fi
+  # nur Dienste stoppen, die WIR laut Manifest angelegt haben
+  if [ -f "$MANIFEST" ] && grep -q 'tetrabrew-tls-freetetra.service' "$MANIFEST"; then
+    systemctl disable --now tetrabrew-tls-freetetra 2>/dev/null || true; fi
+  # installierte Dateien laut Manifest entfernen
+  if [ -f "$MANIFEST" ]; then while IFS= read -r f; do [ -n "$f" ] && rm -f "$f" && echo "   entfernt: $f"; done < "$MANIFEST"; rm -rf "$MANIFEST" "$BACKUP_DIR";
+  else
+    warn "kein Manifest — entferne Standardpfade"; rm -f "$SO_DEST" "$TCL_DEST"; fi
+  systemctl daemon-reload 2>/dev/null || true
+  say "Neustart + Pruefung ..."
+  systemctl restart svxlink 2>/dev/null || true; sleep 4
+  svx_active && ok "svxlink laeuft (ohne das Modul)." || err "svxlink kam nicht hoch — pruefe $CONF."
+  say "Deinstallation fertig."
+}
+
+# ---------- Status / Doctor ----------
+do_status(){
+  detect_paths
+  say "ModuleTetraBrew — Status"
+  echo "   SvxLink-Version : $(detect_version || echo '?')"
+  echo "   .so installiert : $([ -f "$SO_DEST" ] && echo "ja  ($SO_DEST)" || echo nein)"
+  echo "   Config          : $([ -f "$CONF_DEST" ] && echo "ja  ($CONF_DEST)" || echo nein)"
+  echo "   in MODULES       : $(grep -qE '^MODULES=.*ModuleTetraBrew' "$CONF" 2>/dev/null && echo ja || echo nein)"
+  echo "   svxlink aktiv    : $(svx_active && echo ja || echo NEIN)"
+  local loaded="nein" initfail=0
+  if svx_log | grep -qiE 'Bailing out|Initialization failed for module ModuleTetraBrew'; then initfail=1; fi
+  if [ "$initfail" = 0 ] && svx_active && grep -qE '^MODULES=.*ModuleTetraBrew' "$CONF" 2>/dev/null; then loaded="ja (aktiv)"; fi
+  if svx_log | grep -qi 'Module TetraBrew'; then loaded="ja (im Log)"; fi
+  echo "   Modul geladen    : $loaded"
+  [ "$initfail" = 1 ] && warn "Log zeigt Modul-Init-Fehler!" || true
+  [ -f "$MANIFEST" ] && echo "   Manifest         : $MANIFEST ($(wc -l < "$MANIFEST") Datei(en))"
+}
+
+# ---------- Dispatch ----------
+[ "$(id -u)" = 0 ] || { [ "$MODE" = status ] || die "Bitte mit sudo/als root ausfuehren."; }
+case "$MODE" in
+  install)   do_install ;;
+  check)     detect_paths; if preflight; then build; echo; say "CHECK OK — wuerde sauber installieren (nichts geaendert)."; else die "CHECK: Voraussetzungen fehlen (siehe oben)."; fi ;;
+  status)    do_status ;;
+  uninstall) do_uninstall ;;
+esac
