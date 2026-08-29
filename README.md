@@ -8,32 +8,31 @@ Talkgroup-Wahl per DTMF, deutsche Sprachansagen, läuft auf **alten wie neuen** 
 
 ---
 
-## In 3 Schritten am Netz
+## Am Netz — in einem Schritt
 
-Noch nie ein SvxLink-Modul von Hand installiert? Kein Problem — `install.sh` macht die ganze
-Arbeit (Codec + Modul bauen, alles kopieren, TLS-Proxy einrichten). Du machst nur **drei Dinge**:
+`install.sh` macht **alles**: baut Codec + Modul **gegen dein SvxLink** (alt wie neu), fragt deine
+RadioID, trägt das Modul ein, testet den Neustart — und **rollt bei jedem Fehler automatisch
+zurück**. Dein laufendes Relais kann dabei nicht kaputtgehen.
 
 ```bash
-# 1) Holen + installieren (baut & installiert alles automatisch)
 git clone https://github.com/do1xx/svxlink-module-tetrabrew.git
 cd svxlink-module-tetrabrew
-sudo ./install.sh
 
-# 2) Deine RadioID eintragen (2 Zeilen) in der frisch kopierten Vorlage:
-sudo nano /etc/svxlink/svxlink.d/ModuleTetraBrew.conf
-#    -> USER=<deine RadioID>   und   SRC_ISSI=<deine RadioID>
+# Erst nur prüfen (ändert NICHTS am System):
+sudo ./install.sh --check
 
-# 3) Modul in der Logic-Sektion aktivieren + neu starten:
-sudo nano /etc/svxlink/svxlink.conf      # in der Zeile: MODULES=...,ModuleTetraBrew
-sudo systemctl restart svxlink
+# Installieren — fragt RadioID, zeigt eine Vorschau, du bestätigst:
+sudo ./install.sh --radioid <DEINE-RADIOID>
 ```
 
 **Fertig.** Auftasten → `5#` → du bist im FreeTetra-Netz (Talkgroup 1). Andere TG: `<tg>#`, aus: `#`.
 
+Status prüfen: `sudo ./install.sh --status` · Entfernen: `sudo ./install.sh --uninstall` ·
+Details: **[INSTALL.md](INSTALL.md)**
+
 > **Du brauchst nur:** einen laufenden SvxLink-Repeater, deine **RadioID** (kostenlos auf
-> radioid.net) und die üblichen Bau-Werkzeuge (`g++`, `python3` — meist schon da). Mehr nicht.
-> Die ~35 Dateien im Repo sind fast alle Sprachansagen (`sounds/*.wav`) und Header — **die fasst
-> du nie an**, das erledigt der Installer.
+> radioid.net) und die üblichen Bau-Werkzeuge (`g++`, `python3` — meist schon da). Der Installer
+> fasst nur das Modul an (Rx/Tx, Audio, Logic, Kennung bleiben unberührt) und sichert vorher alles.
 
 Mehr willst du fürs Mitmachen nicht wissen. Alles darunter ist Nachschlagewerk (Optionen,
 mehrere Netze, Technik).
@@ -113,11 +112,15 @@ GSSI_MAX=16777215     ; nur ein Server -> ganzer Bereich (Aufteilung nur beim Sp
 
 Damit du weißt, was da passiert (musst du nicht selbst tun):
 
+- **Pre-Flight-Checks** vor jeder Änderung (SvxLink, Version, Header, Build-Tools, Rechte) —
+  fehlt was, gibt's eine klare Meldung + Fix, und **nichts wird angefasst**,
 - baut den ACELP-Codec (`libtetra-codec`) und das Modul **gegen dein installiertes SvxLink**
-  (das Modul ist versions-gebunden — es wird lokal kompiliert, damit es exakt passt),
-- installiert `.so` / `.conf` / `.tcl` / Sounds an die richtigen Stellen,
-- richtet den TLS-Proxy als systemd-Service ein (für `wss://freetetra.de`),
-- kopiert die Config-Vorlage und sagt dir am Ende die zwei/drei Handgriffe, die noch fehlen.
+  (versions-gebunden → lokal kompiliert, passt exakt — auch bei alten Versionen),
+- zeigt eine **Vorschau + Haftungshinweis** und fragt dich um Bestätigung,
+- installiert `.so` / `.conf` / `.tcl` / Sounds, füllt deine **RadioID** ein, richtet den
+  TLS-Proxy ein und trägt **`MODULES=…,ModuleTetraBrew`** selbst ein (mit Backup),
+- **testet** den Neustart und **rollt bei jedem Fehler automatisch zurück** → dein Relais läuft
+  wieder wie vorher. Dazu `--check` (Dry-Run), `--status` (Doctor), `--uninstall`.
 
 ---
 
