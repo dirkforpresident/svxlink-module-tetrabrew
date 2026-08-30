@@ -17,6 +17,20 @@ RPORT = int(os.environ.get("TLSP_RPORT", "443"))
 ctx = ssl.create_default_context()  # System-CAs, prüft Cert + Hostname
 
 
+def set_keepalive(sock):
+    # TCP-Keepalive: erkennt still gestorbene Upstream-Verbindungen (naechtliche
+    # DSL-Zwangstrennung/NAT-Drop). Ohne das blockt recv() ewig und die Modul-Seite
+    # wird nie geschlossen -> kein Reconnect. Tot nach ~45 + 3*15 = ~90 s.
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, val in (("TCP_KEEPIDLE", 45), ("TCP_KEEPINTVL", 15), ("TCP_KEEPCNT", 3)):
+            opt = getattr(socket, name, None)
+            if opt is not None:
+                sock.setsockopt(socket.IPPROTO_TCP, opt, val)
+    except Exception:
+        pass
+
+
 def pipe(a, b):
     try:
         while True:
@@ -37,6 +51,7 @@ def handle(client):
     try:
         raw = socket.create_connection((RHOST, RPORT), timeout=10)
         raw.settimeout(None)   # WICHTIG: sonst kappt der 10s-Connect-Timeout die Idle-WS-Verbindung
+        set_keepalive(raw)     # tote DSL-/NAT-Strecke erkennen -> Verbindung sauber abbauen
         tls = ctx.wrap_socket(raw, server_hostname=RHOST)
     except Exception:
         try:

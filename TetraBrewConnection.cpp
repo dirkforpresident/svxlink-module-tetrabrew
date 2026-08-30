@@ -17,6 +17,9 @@ kein eigener Thread, kein blockierendes I/O.
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <AsyncAudioSink.h>
 #include <AsyncAudioSource.h>
@@ -341,6 +344,23 @@ void TetraBrewConnection::disconnect(void)
 void TetraBrewConnection::onConnected(void)
 {
   m_rxbuf.clear();
+
+  // TCP-Keepalive: erkennt still gestorbene Verbindungen (z.B. naechtliche
+  // DSL-Zwangstrennung/NAT-Drop). Ohne das haengt die Session halb-offen und
+  // es kommt nie ein Reconnect. Tot nach ~45 + 3*15 = ~90 s -> onDisconnected.
+  int fd = m_con.fd();
+  if (fd >= 0)
+  {
+    int on = 1;
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
+#ifdef TCP_KEEPIDLE
+    int idle = 45, intvl = 15, cnt = 3;
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,  &idle,  sizeof(idle));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,   &cnt,   sizeof(cnt));
+#endif
+  }
+
   switch (m_state)
   {
     case ST_HTTP_CHALLENGE:

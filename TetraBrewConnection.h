@@ -36,6 +36,15 @@ struct tetra_codec;        // libtetra-codec (opaker Codec-Zustand)
 class AcelpEncoderSink;    // AudioSink: 8k -> ACELP-Frame -> WS  (libtetra-codec)
 class AcelpDecoderSource;  // AudioSource: WS-Frame -> ACELP -> 8k
 
+// TcpClient mit oeffentlichem FD-Zugriff (socket() ist in TcpConnection protected)
+// — noetig, um TCP-Keepalive auf der Session zu setzen.
+class KeepaliveTcpClient : public Async::TcpClient<>
+{
+  public:
+    using Async::TcpClient<>::TcpClient;
+    int fd(void) const { return socket(); }
+};
+
 
 class TetraBrewConnection : public sigc::trackable
 {
@@ -91,7 +100,7 @@ class TetraBrewConnection : public sigc::trackable
     // Der BREW-Server (websockets-Lib, process_request) schließt die Verbindung
     // nach JEDER HTTP-Antwort (401/200). Darum: FRISCHE Verbindung pro Schritt
     // (Challenge -> Auth -> WS-Upgrade), gesteuert über m_reconnect_as.
-    Async::TcpClient<> m_con;
+    KeepaliveTcpClient m_con;
     State       m_state = ST_IDLE;
     State       m_reconnect_as = ST_IDLE;  // nächster Schritt nach dem Reconnect
     std::string m_www_auth;               // WWW-Authenticate-Header aus dem 401

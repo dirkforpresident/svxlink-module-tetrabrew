@@ -4,6 +4,16 @@
 (Server, DO0RAM-Dashboard). Neue Funktionen und Verbesserungen ausführlich,
 Fehlerbehebungen nur kurz.
 
+## 2026-08-30
+
+### Fehlerbehebungen
+- **Kein automatischer Reconnect nach nächtlicher DSL-Zwangstrennung.** Wenn die Internet-
+  Verbindung still stirbt (kein sauberes TCP-Close, z.B. DSL-Reconnect um ~01:00 oder NAT-Drop),
+  hing die BREW-Session halb-offen — der Server trug den Knoten aus („offline"), aber das Modul
+  merkte nichts und verband nie neu (erst manueller svxlink-Neustart half). Jetzt **TCP-Keepalive**
+  auf beiden Ebenen (Modul-Socket + TLS-Proxy-Upstream): tote Verbindung wird in ~90 s erkannt →
+  sauberer Abbau → Reconnect greift automatisch.
+
 ## 2026-08-29
 
 ### Neue Funktionen
